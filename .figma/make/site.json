@@ -1,0 +1,10 @@
+{
+  "description": "Streamlines recruitment by connecting candidates with employers and enabling recruiters to manage campaigns, applications, evaluations, and hiring workflows efficiently.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
