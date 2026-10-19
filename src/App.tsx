@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
+// Resolve bundled reference images correctly on localhost and subpath deployments.
+const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`;
+
 type IconName =
   | "home" | "briefcase" | "users" | "sparkles" | "settings" | "search"
   | "bell" | "plus" | "arrow" | "dots" | "check" | "clock" | "chevron"
@@ -81,10 +84,11 @@ function go(path: string) {
 }
 
 function Logo() {
-  return <button className="logo" onClick={() => go("/recruiter")}><span className="logo-mark"><span/><span/><span/></span><span>RecruitFlow</span></button>;
+  return <button className="logo" onClick={() => go("/recruiter")}><span className="brand-symbol"><img src={asset("assets/recruitflow-logo.png")} alt="" /></span><span>RecruitFlow</span></button>;
 }
 
 function AppShell({ children, mode, path }: { children: React.ReactNode; mode: "recruiter" | "candidate"; path: string }) {
+  const profileReadiness = getDisplayedProfileReadiness();
   const [mobileOpen, setMobileOpen] = useState(false);
   const nav = mode === "recruiter" ? recruiterNav : candidateNav;
   const current = (p: string) => p === `/${mode}` ? path === p : path.startsWith(p);
@@ -94,7 +98,7 @@ function AppShell({ children, mode, path }: { children: React.ReactNode; mode: "
       {mode === "recruiter" ? <div className="org-switch"><span className="org-icon">N</span><span><strong>Northstar Labs</strong><small>Recruiter workspace</small></span><Icon name="chevron" size={15}/></div> : <div className="profile-mini"><Avatar initials="AM" color="purple"/><span><strong>Alex Morgan</strong><small>Candidate account</small></span></div>}
       <nav className="main-nav" aria-label="Primary">
         <span className="nav-label">Workspace</span>
-        {nav.map(item => <button key={item.path} className={`nav-item ${current(item.path) ? "active" : ""}`} onClick={() => { go(item.path); setMobileOpen(false); }}><Icon name={item.icon}/><span>{item.label}</span>{item.label === "My profile" && <span className="nav-progress">75%</span>}</button>)}
+        {nav.map(item => <button key={item.path} className={`nav-item ${current(item.path) ? "active" : ""}`} onClick={() => { go(item.path); setMobileOpen(false); }}><Icon name={item.icon}/><span>{item.label}</span>{item.label === "My profile" && <span className="nav-progress">{profileReadiness}%</span>}</button>)}
         {mode === "recruiter" && <div className="nav-settings">
           <button className={`nav-item ${path.includes("/settings/") ? "active" : ""}`} onClick={() => go("/recruiter/settings/team")}><Icon name="settings"/><span>Settings</span><Icon name="chevron" size={14}/></button>
           {(path.includes("/settings/") || true) && <div className="subnav">
@@ -104,9 +108,9 @@ function AppShell({ children, mode, path }: { children: React.ReactNode; mode: "
         </div>}
       </nav>
       {mode === "candidate" && <div className="readiness-card">
-        <div className="readiness-head"><span>Profile readiness</span><strong>75%</strong></div>
-        <div className="progress"><span style={{ width: "75%" }}/></div>
-        <p>Add work experience to improve your matches.</p>
+        <div className="readiness-head"><span>Profile readiness</span><strong>{profileReadiness}%</strong></div>
+        <div className="progress"><span style={{ width: `${profileReadiness}%` }}/></div>
+        <p>{profileReadiness === 100 ? "Your profile is ready to be matched." : "Add work experience to improve your matches."}</p>
         <button onClick={() => go("/candidate/settings/profile-readiness")}>Complete profile <Icon name="arrow" size={14}/></button>
       </div>}
       <div className="sidebar-footer"><button className="account-row"><Avatar initials={mode === "recruiter" ? "SO" : "AM"} color={mode === "recruiter" ? "green" : "purple"} size="sm"/><span><strong>{mode === "recruiter" ? "Sophie Okafor" : "Alex Morgan"}</strong><small>{mode === "recruiter" ? "Admin" : "alex@example.com"}</small></span><Icon name="dots"/></button></div>
@@ -120,7 +124,7 @@ function AppShell({ children, mode, path }: { children: React.ReactNode; mode: "
         <button className="icon-btn notification" aria-label="Notifications"><Icon name="bell"/><span/></button>
         <Avatar initials={mode === "recruiter" ? "SO" : "AM"} color={mode === "recruiter" ? "green" : "purple"} size="sm"/>
       </header>
-      <div className="content">{children}</div>
+      <div className="content" key={path}><div className="route-content">{children}</div></div>
     </main>
   </div>;
 }
@@ -146,6 +150,7 @@ const applicants = [
 function RecruiterDashboard() {
   return <div>
     <PageHeader eyebrow="Tuesday, 12 March" title="Good morning, Sophie" description="Here’s what’s happening across your recruitment workspace." action={<Button icon="plus" onClick={() => go("/recruiter/campaigns/new")}>Create campaign</Button>}/>
+    <WorkspaceShowcase audience="recruiter"/>
     <div className="metrics-grid">{metrics.map(m => <div className="metric" key={m.label}><div className={`metric-icon metric-${m.tone}`}><Icon name={m.icon}/></div><div><span>{m.label}</span><strong>{m.value}</strong><small><Icon name={m.meta.includes("faster") || m.meta.includes("+") ? "arrow" : "clock"} size={12}/>{m.meta}</small></div></div>)}</div>
     <div className="dashboard-grid">
       <section className="surface pipeline-card">
@@ -254,15 +259,44 @@ function SettingsPage({ business = false }: { business?: boolean }) {
 }
 
 const jobs = [
-  { title: "Senior Product Designer", company: "Orbit Systems", location: "Cape Town", mode: "Hybrid", time: "2 days ago", match: 92, initials: "OS", tone: "blue" },
-  { title: "Product Designer", company: "Luma Health", location: "Johannesburg", mode: "Remote", time: "3 days ago", match: 86, initials: "LH", tone: "green" },
-  { title: "UX/UI Designer", company: "Kite Finance", location: "South Africa", mode: "Remote", time: "5 days ago", match: 81, initials: "KF", tone: "purple" },
-  { title: "Design Systems Lead", company: "Meridian", location: "Cape Town", mode: "On-site", time: "1 week ago", match: 78, initials: "ME", tone: "amber" },
+  { title: "Senior Product Designer", company: "Orbit Systems", image: asset("assets/workplaces/office-3.jpg"), location: "Cape Town", mode: "Hybrid", time: "2 days ago", match: 92, initials: "OS", tone: "blue" },
+  { title: "Product Designer", company: "Luma Health", image: asset("assets/workplaces/office-2.jpg"), location: "Johannesburg", mode: "Remote", time: "3 days ago", match: 86, initials: "LH", tone: "green" },
+  { title: "UX/UI Designer", company: "Kite Finance", image: asset("assets/workplaces/office-4.jpg"), location: "South Africa", mode: "Remote", time: "5 days ago", match: 81, initials: "KF", tone: "purple" },
+  { title: "Design Systems Lead", company: "Meridian", image: asset("assets/workplaces/office-1.jpg"), location: "Cape Town", mode: "On-site", time: "1 week ago", match: 78, initials: "ME", tone: "amber" },
 ];
 
+// Visual-only readiness adapter: the original prototype has a 75% demo value.
+// A saved 100% value can be supplied by a profile persistence integration;
+// this patch does not change the existing Save or profile-edit behavior.
+function getDisplayedProfileReadiness(): number {
+  try {
+    const saved = window.localStorage.getItem("recruitflow.profileReadiness");
+    if (saved !== null && saved.trim() !== "") {
+      const percent = Number(saved);
+      if (Number.isFinite(percent)) return Math.min(100, Math.max(0, percent));
+    }
+  } catch { /* Private browsing may disable localStorage. */ }
+  return 75;
+}
+
+// Design reference: the blue photo banners in the provided candidate/recruiter screenshots.
+function WorkspaceShowcase({ audience }: { audience: "candidate" | "recruiter" }) {
+  const candidate = audience === "candidate";
+  return <section className={`workspace-showcase workspace-showcase-${audience}`} aria-label={candidate ? "Your next chapter" : "Your hiring workspace"}>
+    <div className="workspace-showcase-content">
+      <span className="workspace-showcase-eyebrow">{candidate ? "YOUR NEXT CHAPTER" : "YOUR HIRING WORKSPACE"}</span>
+      {candidate ? <h2>Make space for work<br/>that feels like you.</h2> : <h2>Great teams start<br/>with thoughtful hiring.</h2>}
+      <p>{candidate ? "Discover thoughtful teams and roles that match your skills, interests, and ambition." : "Bring the right people into view and keep every next step clear."}</p>
+      <Button variant="secondary" onClick={() => go(candidate ? "/candidate/jobs" : "/recruiter/campaigns")}>{candidate ? "Explore opportunities" : "Manage campaigns"} <Icon name="arrow" size={16}/></Button>
+    </div>
+    <div className="workspace-showcase-picture" aria-hidden="true"><img src={asset("assets/workplaces/office-1.jpg")} alt=""/></div>
+  </section>;
+}
+
 function CandidateDashboard() {
+  const profileReadiness = getDisplayedProfileReadiness();
   return <div><PageHeader eyebrow="Tuesday, 12 March" title="Welcome back, Alex" description="You’re making progress. Here’s what to focus on next." action={<Button icon="search" onClick={() => go("/candidate/jobs")}>Find jobs</Button>}/>
-    <div className="candidate-hero"><div><span className="eyebrow">Your profile</span><h2>Stand out to the right employers</h2><p>Your profile is 75% ready. Add your recent work experience to unlock stronger job matches.</p><Button variant="secondary" onClick={() => go("/candidate/settings/profile-readiness")}>Complete your profile <Icon name="arrow" size={15}/></Button></div><div className="readiness-ring"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><circle className="ring-value" cx="40" cy="40" r="34"/></svg><span><strong>75%</strong><small>ready</small></span></div></div>
+    {profileReadiness === 100 ? <WorkspaceShowcase audience="candidate"/> : <div className="candidate-hero"><div><span className="eyebrow">Your profile</span><h2>Stand out to the right employers</h2><p>Your profile is {profileReadiness}% ready. Add your recent work experience to unlock stronger job matches.</p><Button variant="secondary" onClick={() => go("/candidate/settings/profile-readiness")}>Complete your profile <Icon name="arrow" size={15}/></Button></div><div className="readiness-ring"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><circle className="ring-value" cx="40" cy="40" r="34" style={{ "--ring-fill": `${Math.round((profileReadiness / 100) * 214)} 214` } as React.CSSProperties}/></svg><span><strong>{profileReadiness}%</strong><small>ready</small></span></div></div>}
     <div className="application-stats">{[["Applications", "7", "2 updated this week"], ["In review", "3", "Recruiters are reviewing"], ["Interviews", "1", "Next: Friday at 10:00"]].map((x, i) => <div key={x[0]}><span className={`metric-icon metric-${["blue", "amber", "green"][i]}`}><Icon name={["file", "clock", "calendar"][i] as IconName}/></span><span><small>{x[0]}</small><strong>{x[1]}</strong><p>{x[2]}</p></span></div>)}</div>
     <section className="recommended"><div className="section-header"><div><h2>Recommended for you</h2><p>Based on your skills and preferences</p></div><button className="text-btn" onClick={() => go("/candidate/jobs")}>Browse all jobs <Icon name="arrow" size={14}/></button></div><div className="job-grid">{jobs.slice(0, 3).map(j => <JobCard job={j} key={j.title}/>)}</div></section>
   </div>;
@@ -270,7 +304,7 @@ function CandidateDashboard() {
 
 function JobCard({ job, selected = false, onClick }: { job: typeof jobs[0]; selected?: boolean; onClick?: () => void }) {
   const [saved, setSaved] = useState(false);
-  return <article className={`job-card ${selected ? "selected" : ""}`} onClick={onClick}><div className="job-card-top"><span className={`company-logo logo-${job.tone}`}>{job.initials}</span><button className={`icon-btn ${saved ? "saved" : ""}`} onClick={e => { e.stopPropagation(); setSaved(!saved); }} aria-label="Save job"><Icon name="bookmark"/></button></div><h3>{job.title}</h3><p className="company">{job.company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{job.location}</span><span><Icon name="briefcase" size={14}/>{job.mode}</span></div><div className="job-footer"><span className="match"><Icon name="sparkles" size={14}/>{job.match}% match</span><small>{job.time}</small></div></article>;
+  return <article className={`job-card ${selected ? "selected" : ""}`} onClick={onClick}><div className="job-card-photo" aria-hidden="true"><img src={job.image} alt="" loading="lazy" /></div><div className="job-card-top"><span className={`company-logo logo-${job.tone}`}>{job.initials}</span><button className={`icon-btn ${saved ? "saved" : ""}`} onClick={e => { e.stopPropagation(); setSaved(!saved); }} aria-label="Save job"><Icon name="bookmark"/></button></div><h3>{job.title}</h3><p className="company">{job.company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{job.location}</span><span><Icon name="briefcase" size={14}/>{job.mode}</span></div><div className="job-footer"><span className="match"><Icon name="sparkles" size={14}/>{job.match}% match</span><small>{job.time}</small></div></article>;
 }
 
 function JobsPage() {
@@ -278,7 +312,7 @@ function JobsPage() {
   return <div><PageHeader eyebrow="Opportunities" title="Find your next role" description="Explore opportunities matched to your skills and preferences."/>
     <div className="job-search-bar"><label className="search"><Icon name="search"/><input placeholder="Job title, skill or company"/></label><label className="search location-search"><Icon name="location"/><input placeholder="Location"/></label><Button>Search jobs</Button></div>
     <div className="filter-row"><Button variant="secondary" icon="filter">All filters</Button>{["Remote", "Hybrid", "Design", "Full-time"].map(f => <button className="filter-pill" key={f}>{f}<Icon name="close" size={13}/></button>)}<span className="results-count">48 opportunities</span></div>
-    <div className="jobs-layout"><div className="results-list">{jobs.map((j, i) => <JobCard job={j} key={j.title} selected={selected === i} onClick={() => setSelected(i)}/>)}</div><aside className="job-detail"><div className="detail-header"><span className={`company-logo logo-${jobs[selected].tone}`}>{jobs[selected].initials}</span><button className="icon-btn"><Icon name="bookmark"/></button></div><h2>{jobs[selected].title}</h2><p className="company">{jobs[selected].company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{jobs[selected].location}</span><span><Icon name="briefcase" size={14}/>{jobs[selected].mode}</span></div><div className="match-banner"><Icon name="sparkles"/><span><strong>{jobs[selected].match}% profile match</strong><small>Your skills align strongly with this role.</small></span></div><Button className="full">Apply now</Button><div className="detail-copy"><h3>About the role</h3><p>Join a collaborative product team shaping thoughtful digital experiences. You’ll partner closely with product, engineering and research to solve meaningful customer problems.</p><h3>What you’ll bring</h3><ul><li>5+ years of product design experience</li><li>Strong portfolio of end-to-end product work</li><li>Experience with accessible design systems</li></ul></div></aside></div>
+    <div className="jobs-layout"><div className="results-list">{jobs.map((j, i) => <JobCard job={j} key={j.title} selected={selected === i} onClick={() => setSelected(i)}/>)}</div><aside className="job-detail"><div className="job-detail-photo" key={jobs[selected].image}><img src={jobs[selected].image} alt="" /></div><div className="detail-header"><span className={`company-logo logo-${jobs[selected].tone}`}>{jobs[selected].initials}</span><button className="icon-btn"><Icon name="bookmark"/></button></div><h2>{jobs[selected].title}</h2><p className="company">{jobs[selected].company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{jobs[selected].location}</span><span><Icon name="briefcase" size={14}/>{jobs[selected].mode}</span></div><div className="match-banner"><Icon name="sparkles"/><span><strong>{jobs[selected].match}% profile match</strong><small>Your skills align strongly with this role.</small></span></div><Button className="full">Apply now</Button><div className="detail-copy"><h3>About the role</h3><p>Join a collaborative product team shaping thoughtful digital experiences. You’ll partner closely with product, engineering and research to solve meaningful customer problems.</p><h3>What you’ll bring</h3><ul><li>5+ years of product design experience</li><li>Strong portfolio of end-to-end product work</li><li>Experience with accessible design systems</li></ul></div></aside></div>
   </div>;
 }
 
@@ -290,10 +324,11 @@ function ApplicationsPage() {
 }
 
 function ProfilePage() {
+  const profileReadiness = getDisplayedProfileReadiness();
   const [section, setSection] = useState("Personal details");
   const sections = [["Personal details", true], ["CV & documents", true], ["Skills", true], ["Work experience", false], ["Education", false], ["Preferences", true]] as const;
   return <div><PageHeader eyebrow="My profile" title="Profile readiness" description="A complete profile helps employers understand your experience and improves job matches." action={<Button>Save changes</Button>}/>
-    <div className="profile-summary"><div className="readiness-ring small"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><circle className="ring-value" cx="40" cy="40" r="34"/></svg><span><strong>75%</strong></span></div><div><h2>Your profile is almost ready</h2><p>Complete 2 remaining sections to make your profile visible for all matched opportunities.</p><div className="missing"><span><Icon name="clock" size={14}/> Add work experience</span><span><Icon name="clock" size={14}/> Add education</span></div></div></div>
+    <div className="profile-summary"><div className="readiness-ring small"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><circle className="ring-value" cx="40" cy="40" r="34" style={{ "--ring-fill": `${Math.round((profileReadiness / 100) * 214)} 214` } as React.CSSProperties}/></svg><span><strong>{profileReadiness}%</strong></span></div><div><h2>{profileReadiness === 100 ? "Your profile is ready" : "Your profile is almost ready"}</h2><p>{profileReadiness === 100 ? "Your profile is complete and ready for matched opportunities." : "Complete 2 remaining sections to make your profile visible for all matched opportunities."}</p>{profileReadiness !== 100 && <div className="missing"><span><Icon name="clock" size={14}/> Add work experience</span><span><Icon name="clock" size={14}/> Add education</span></div>}</div></div>
     <div className="editor-layout profile-layout"><aside className="section-nav">{sections.map(([s, done]) => <button className={section === s ? "active" : ""} key={s} onClick={() => setSection(s)}>{done ? <span className="done"><Icon name="check" size={13}/></span> : <span/>}{s}<small>{done ? "Complete" : "Missing"}</small></button>)}</aside><section className="form-page"><div className="form-heading"><span className="step-icon"><Icon name="user"/></span><div><h2>{section}</h2><p>Keep your information accurate and up to date.</p></div></div><div className="avatar-upload"><Avatar initials="AM" color="purple" size="lg"/><div><strong>Profile photo</strong><p>JPG or PNG, up to 5 MB.</p><Button variant="secondary" icon="upload">Upload new photo</Button></div></div><div className="form-grid"><Field label="First name" placeholder="Alex"/><Field label="Last name" placeholder="Morgan"/><Field label="Email address" icon="mail" placeholder="alex@example.com"/><Field label="Phone number" placeholder="+27 72 000 0000"/><Field label="Location" icon="location" placeholder="Cape Town, South Africa"/><Field label="Professional headline" placeholder="Senior Product Designer"/></div><label className="field field-full"><span className="field-label">Professional summary</span><textarea defaultValue="Product designer focused on clear, accessible experiences for complex digital products."/></label></section></div>
   </div>;
 }
@@ -317,10 +352,23 @@ function AuthPage({ kind = "login" }: { kind?: "login" | "forgot" | "reset" | "i
   }
   if (kind === "apply") return <PublicApplication/>;
   const copy = kind === "forgot" ? ["Reset your password", "Enter your email and we’ll send reset instructions if an account exists.", "Send reset link"] : kind === "reset" ? ["Choose a new password", "Create a strong password you don’t use elsewhere.", "Reset password"] : kind === "invite" ? ["Join Northstar Labs", "You’ve been invited to join the recruiter workspace as a Recruiter.", "Accept invitation"] : ["Welcome to RecruitFlow", "Sign in to continue to your workspace.", "Sign in"];
-  return <div className="auth-layout"><aside className="auth-aside"><Logo/><div className="auth-message"><span className="quote-mark">“</span><blockquote>Hiring is about more than filling roles. RecruitFlow helps teams make every candidate interaction count.</blockquote><div className="quote-person"><Avatar initials="SO" color="green"/><span><strong>Sophie Okafor</strong><small>People Operations, Northstar Labs</small></span></div></div><p className="aside-foot">Trusted by growing teams to hire thoughtfully.</p></aside><main className="auth-main"><div className="mobile-logo"><Logo/></div><div className="auth-form"><div className="auth-heading">{kind === "login" && <span className="auth-kicker">RecruitFlow</span>}<h1>{copy[0]}</h1><p>{copy[1]}</p></div>
+  return <div className={`auth-layout ${kind === "login" ? "auth-login" : ""}`}><aside className="auth-aside">{kind === "login" ? <>
+    <div className="auth-brand-lockup"><Logo/><span>by Refrane</span></div>
+    <div className="auth-feature">
+      <span className="auth-feature-eyebrow">YOUR RECRUITFLOW WORKSPACE</span>
+      <h2>People and progress,<br/>in one place.</h2>
+      <p>A clear space for candidates to explore opportunities and teams to make thoughtful hiring decisions.</p>
+      <div className="auth-feature-visual" aria-hidden="true">
+        <div className="auth-feature-photo"><img src={asset("assets/workplaces/office-2.jpg")} alt=""/></div>
+        <span className="auth-feature-pill auth-feature-pill-top"><Icon name="users" size={19}/>Built around people</span>
+        <span className="auth-feature-pill auth-feature-pill-bottom"><Icon name="check" size={18}/>Smarter next steps</span>
+      </div>
+    </div>
+    <p className="aside-foot">RecruitFlow by Refrane</p>
+  </> : <><Logo/><div className="auth-message"><div className="auth-photo-stack" aria-hidden="true"><div className="auth-photo-main"><img src={asset("assets/workplaces/office-2.jpg")} alt="" /></div><div className="auth-photo-portrait"><img src={asset("assets/people/person-1.jpg")} alt="" /></div><div className="auth-photo-pill"><span className="auth-mini-avatars"><img src={asset("assets/people/person-2.jpg")} alt=""/><img src={asset("assets/people/person-3.jpg")} alt=""/><img src={asset("assets/people/person-4.jpg")} alt=""/></span><span>People, connected.</span></div></div><span className="quote-mark">“</span><blockquote>Hiring is about more than filling roles. RecruitFlow helps teams make every candidate interaction count.</blockquote><div className="quote-person"><Avatar initials="SO" color="green"/><span><strong>Sophie Okafor</strong><small>People Operations, Northstar Labs</small></span></div></div><p className="aside-foot">Trusted by growing teams to hire thoughtfully.</p></>}</aside><main className="auth-main"><div className="mobile-logo"><Logo/></div><div className="auth-form"><div className="auth-heading">{kind === "login" && <span className="auth-kicker">RecruitFlow</span>}<h1>{copy[0]}</h1><p>{copy[1]}</p></div>
     {kind === "login" && <div className="persona-switch"><button className={persona === "candidate" ? "active" : ""} onClick={() => setPersona("candidate")}><Icon name="user"/>Candidate</button><button className={persona === "recruiter" ? "active" : ""} onClick={() => setPersona("recruiter")}><Icon name="building"/>Recruiter</button></div>}
     {kind === "invite" && <div className="invite-card"><span className="org-icon">N</span><span><strong>Northstar Labs</strong><small>Recruiter workspace · Invited by Sophie</small></span></div>}
-    <form onSubmit={e => { e.preventDefault(); go(kind === "login" ? `/${persona}` : kind === "invite" ? "/recruiter" : "/login"); }}>
+    <form onSubmit={e => { e.preventDefault(); const target = kind === "login" ? `/${persona}` : kind === "invite" ? "/recruiter" : "/login"; if (kind === "login" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) { e.currentTarget.closest(".auth-layout")?.classList.add("auth-exiting"); window.setTimeout(() => go(target), 350); } else { go(target); } }}>
       {kind !== "reset" && <Field label="Email address" icon="mail" placeholder="you@example.com" type="email"/>}
       {(kind === "login" || kind === "reset" || kind === "invite") && <Field label={kind === "reset" ? "New password" : "Password"} icon="lock" placeholder="Enter your password" type="password" helper={kind === "reset" ? "At least 8 characters with a number and symbol." : undefined}/>}
       {kind === "reset" && <Field label="Confirm new password" icon="lock" placeholder="Repeat your password" type="password"/>}
@@ -333,7 +381,7 @@ function AuthPage({ kind = "login" }: { kind?: "login" | "forgot" | "reset" | "i
 }
 
 function PublicApplication() {
-  return <div className="application-public"><header className="application-header"><div className="employer-brand"><span className="company-logo logo-blue">OS</span><span><strong>Orbit Systems</strong><small>Powered by RecruitFlow</small></span></div><span className="secure"><Icon name="lock" size={14}/> Secure application</span></header><main className="application-form-page"><div className="role-intro"><Badge tone="success">Applications open</Badge><h1>Senior Product Designer</h1><div className="job-meta"><span><Icon name="location" size={15}/>Cape Town</span><span><Icon name="briefcase" size={15}/>Hybrid · Full-time</span></div><p>Help us shape clear, useful experiences for thousands of growing teams.</p></div><div className="application-columns"><aside><h2>Your application</h2>{["Personal details", "Experience", "Documents", "Additional questions"].map((x, i) => <div className={i === 0 ? "current" : ""} key={x}><span>{i + 1}</span>{x}</div>)}</aside><section className="form-page"><div className="form-heading"><div><h2>Personal details</h2><p>Tell the hiring team how they can reach you.</p></div></div><div className="form-grid"><Field label="First name" placeholder="Your first name"/><Field label="Last name" placeholder="Your last name"/><Field label="Email address" icon="mail" placeholder="you@example.com"/><Field label="Phone number" placeholder="+27"/></div><Field label="Current location" icon="location" placeholder="City, country"/><div className="form-footer"><span>Step 1 of 4</span><Button>Continue <Icon name="arrow" size={15}/></Button></div></section></div></main></div>;
+  return <div className="application-public"><header className="application-header"><div className="employer-brand"><span className="company-logo logo-blue">OS</span><span><strong>Orbit Systems</strong><small>Powered by RecruitFlow</small></span></div><span className="secure"><Icon name="lock" size={14}/> Secure application</span></header><main className="application-form-page"><div className="application-cover" aria-hidden="true"><img src={asset("assets/workplaces/office-3.jpg")} alt="" /><div className="application-cover-overlay"><img src={asset("assets/recruitflow-logo.png")} alt="" /></div></div><div className="role-intro"><Badge tone="success">Applications open</Badge><h1>Senior Product Designer</h1><div className="job-meta"><span><Icon name="location" size={15}/>Cape Town</span><span><Icon name="briefcase" size={15}/>Hybrid · Full-time</span></div><p>Help us shape clear, useful experiences for thousands of growing teams.</p></div><div className="application-columns"><aside><h2>Your application</h2>{["Personal details", "Experience", "Documents", "Additional questions"].map((x, i) => <div className={i === 0 ? "current" : ""} key={x}><span>{i + 1}</span>{x}</div>)}</aside><section className="form-page"><div className="form-heading"><div><h2>Personal details</h2><p>Tell the hiring team how they can reach you.</p></div></div><div className="form-grid"><Field label="First name" placeholder="Your first name"/><Field label="Last name" placeholder="Your last name"/><Field label="Email address" icon="mail" placeholder="you@example.com"/><Field label="Phone number" placeholder="+27"/></div><Field label="Current location" icon="location" placeholder="City, country"/><div className="form-footer"><span>Step 1 of 4</span><Button>Continue <Icon name="arrow" size={15}/></Button></div></section></div></main></div>;
 }
 
 function App() {
@@ -369,7 +417,7 @@ function App() {
     }
     return <AuthPage kind="404"/>;
   }, [path]);
-  return content;
+  return <div className="page-transition" key={path}>{content}</div>;
 }
 
 export default App;
