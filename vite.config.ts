@@ -6,7 +6,6 @@ import path from 'node:path'
 import siteConfiguration from './.figma/make/site.json'
 
 
-// Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // .figma/make/deploy-preview passes `--mode development` for cached-preview builds.
   const emitSourcemaps = mode === 'development'
