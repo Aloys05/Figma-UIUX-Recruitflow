@@ -15,9 +15,12 @@ export default defineConfig(({ mode }) => {
     process.env.GITHUB_ACTIONS === 'true' && repositoryName && !repositoryName.endsWith('.github.io')
       ? `/${repositoryName}/`
       : '/'
+  const publicBase = process.env.FIGMA_PUBLIC_URL
+    ? `${process.env.FIGMA_PUBLIC_URL.replace(/\/$/, '')}/`
+    : githubPagesBase
 
   return {
-    base: process.env.FIGMA_PUBLIC_URL ? `${process.env.FIGMA_PUBLIC_URL}/` : githubPagesBase,
+    base: publicBase,
     build: {
       sourcemap: emitSourcemaps ? 'inline' : false,
       minify: !emitSourcemaps,
