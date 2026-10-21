@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 // Resolve bundled reference images correctly on localhost and subpath deployments.
-const asset = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
+const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 
 type IconName =
   | "home" | "briefcase" | "users" | "sparkles" | "settings" | "search"
