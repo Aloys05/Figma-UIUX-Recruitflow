@@ -62,8 +62,8 @@ function Avatar({ initials, color = "blue", size = "md" }: { initials: string; c
   return <span className={`avatar avatar-${color} avatar-${size}`}>{initials}</span>;
 }
 
-function Field({ label, placeholder, icon, type = "text", helper }: { label: string; placeholder?: string; icon?: IconName; type?: string; helper?: string }) {
-  return <label className="field"><span className="field-label">{label}</span><span className="input-wrap">{icon && <Icon name={icon} size={17}/>}<input type={type} placeholder={placeholder}/>{type === "password" && <Icon name="eye" size={17}/>}</span>{helper && <span className="field-helper">{helper}</span>}</label>;
+function Field({ label, placeholder, icon, type = "text", helper, required = false, minLength, onChange }: { label: string; placeholder?: string; icon?: IconName; type?: string; helper?: string; required?: boolean; minLength?: number; onChange?: React.ChangeEventHandler<HTMLInputElement> }) {
+  return <label className="field"><span className="field-label">{label}</span><span className="input-wrap">{icon && <Icon name={icon} size={17}/>}<input type={type} placeholder={placeholder} required={required} minLength={minLength} onChange={onChange}/>{type === "password" && <Icon name="eye" size={17}/>}</span>{helper && <span className="field-helper">{helper}</span>}</label>;
 }
 
 const recruiterNav = [
@@ -93,6 +93,10 @@ function AppShell({ children, mode, path }: { children: React.ReactNode; mode: "
   const [mobileOpen, setMobileOpen] = useState(false);
   const nav = mode === "recruiter" ? recruiterNav : candidateNav;
   const current = (p: string) => p === `/${mode}` ? path === p : path.startsWith(p);
+  const logOut = () => {
+    window.history.replaceState({}, "", "/login");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
   return <div className="app-shell">
     <aside className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}>
       <div className="sidebar-top"><Logo/><button className="icon-btn mobile-close" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><Icon name="close"/></button></div>
@@ -114,7 +118,7 @@ function AppShell({ children, mode, path }: { children: React.ReactNode; mode: "
         <p>{profileReadiness === 100 ? "Your profile is ready to be matched." : "Add work experience to improve your matches."}</p>
         <button onClick={() => go("/candidate/settings/profile-readiness")}>Complete profile <Icon name="arrow" size={14}/></button>
       </div>}
-      <div className="sidebar-footer"><button className="account-row"><Avatar initials={mode === "recruiter" ? "SO" : "AM"} color={mode === "recruiter" ? "green" : "purple"} size="sm"/><span><strong>{mode === "recruiter" ? "Sophie Okafor" : "Alex Morgan"}</strong><small>{mode === "recruiter" ? "Admin" : "alex@example.com"}</small></span><Icon name="dots"/></button></div>
+      <div className="sidebar-footer"><div className="account-row"><Avatar initials={mode === "recruiter" ? "SO" : "AM"} color={mode === "recruiter" ? "green" : "purple"} size="sm"/><span className="account-details"><strong>{mode === "recruiter" ? "Sophie Okafor" : "Alex Morgan"}</strong><small>{mode === "recruiter" ? "Admin" : "alex@example.com"}</small></span><button className="account-signout" onClick={logOut} aria-label="Sign out" title="Sign out"><Icon name="logOut" size={17}/></button></div></div>
     </aside>
     {mobileOpen && <button className="scrim" onClick={() => setMobileOpen(false)} aria-label="Close navigation"/>}
     <main className="main">
@@ -141,12 +145,14 @@ const metrics = [
   { label: "Average time to review", value: "1.8d", meta: "0.4d faster", icon: "clock" as IconName, tone: "green" },
 ];
 
-const applicants = [
-  { initials: "JM", name: "Jamie Morris", role: "Senior Product Designer", time: "12 min ago", score: "92", status: "Shortlisted", tone: "success", color: "blue" },
-  { initials: "NK", name: "Noah Kim", role: "Frontend Engineer", time: "48 min ago", score: "88", status: "In review", tone: "info", color: "purple" },
-  { initials: "PS", name: "Priya Shah", role: "Senior Product Designer", time: "2 hr ago", score: "84", status: "New", tone: "warning", color: "amber" },
-  { initials: "DO", name: "Daniel Okoro", role: "Customer Success Lead", time: "Yesterday", score: "79", status: "Interview", tone: "neutral", color: "green" },
-] as const;
+type ReviewCandidate = { id?: string; demoApplication?: DemoApplication; initials: string; name: string; email: string; role: string; time: string; score: string; status: string; tone: "success" | "info" | "warning" | "neutral"; color: string };
+
+const applicants: ReviewCandidate[] = [
+  { initials: "JM", name: "Jamie Morris", email: "jamie.morris@email.com", role: "Senior Product Designer", time: "12 min ago", score: "92", status: "Shortlisted", tone: "success", color: "blue" },
+  { initials: "NK", name: "Noah Kim", email: "noah.kim@email.com", role: "Frontend Engineer", time: "48 min ago", score: "88", status: "In review", tone: "info", color: "purple" },
+  { initials: "PS", name: "Priya Shah", email: "priya.shah@email.com", role: "Senior Product Designer", time: "2 hr ago", score: "84", status: "New", tone: "warning", color: "amber" },
+  { initials: "DO", name: "Daniel Okoro", email: "daniel.okoro@email.com", role: "Customer Success Lead", time: "Yesterday", score: "79", status: "Interview", tone: "neutral", color: "green" },
+];
 
 function RecruiterDashboard() {
   return <div>
@@ -201,25 +207,46 @@ function CampaignsPage() {
 }
 
 function CandidatesPage({ campaign = false }: { campaign?: boolean }) {
-  const [selectedCandidate, setSelectedCandidate] = useState<(typeof applicants)[number] | null>(null);
-  const candidateRows = [...applicants, ...applicants.slice(0, 2)];
+  const { applications, error, updateApplicationStatus } = useDemoApplications();
+  const [selectedCandidate, setSelectedCandidate] = useState<ReviewCandidate | null>(null);
+  const demoCandidates: ReviewCandidate[] = applications.map(application => ({
+    id: application.id,
+    initials: "AM",
+    name: "Alex Morgan",
+    email: "alex@example.com",
+    role: application.jobTitle,
+    time: new Date(application.submittedAt).toLocaleString(),
+    score: String(application.match),
+    status: application.status,
+    tone: application.status === "Interview" || application.status === "Shortlisted" ? "success" : application.status === "Closed" ? "neutral" : "info",
+    color: "purple",
+    demoApplication: application,
+  }));
+  const candidateRows = [...applicants, ...applicants.slice(0, 2), ...demoCandidates];
   return <div><PageHeader eyebrow={campaign ? "Campaign / Senior Product Designer" : "Candidate inbox"} title={campaign ? "Senior Product Designer" : "All candidates"} description={campaign ? "Review and move applicants through your hiring pipeline." : "Review candidates across all active recruitment campaigns."} action={<Button variant="secondary" icon="external">{campaign ? "View campaign" : "Export"}</Button>}/>
     {campaign && <div className="funnel-strip">{[["Applications", "41"], ["Qualified", "24"], ["Shortlisted", "9"], ["Interview", "4"]].map((x, i) => <div key={x[0]}><span className={`funnel-dot f-${i}`}/><span><small>{x[0]}</small><strong>{x[1]}</strong></span></div>)}</div>}
     <div className="tabs"><button className="active">All <span>284</span></button><button>New <span>12</span></button><button>In review <span>38</span></button><button>Shortlisted <span>24</span></button></div>
     <Toolbar/>
-    <section className="surface list-surface"><div className="table-wrap"><table><thead><tr><th>Candidate</th><th>Campaign</th><th>AI evaluation</th><th>Status</th><th>Applied</th><th/></tr></thead><tbody>{candidateRows.map((a, i) => <tr className="candidate-row" key={`${a.name}-${i}`} onClick={() => setSelectedCandidate(a)}><td><span className="person"><Avatar initials={a.initials} color={a.color}/><span><strong>{a.name}</strong><small>{a.name.toLowerCase().replace(" ", ".")}@email.com</small></span></span></td><td>{a.role}</td><td><span className="score"><i style={{ "--score": `${a.score}%` } as React.CSSProperties}/><strong>{a.score}%</strong><small>AI-assisted</small></span></td><td><Badge tone={a.tone}>{a.status}</Badge></td><td className="muted">{a.time}</td><td><Button variant="ghost" onClick={() => setSelectedCandidate(a)}>Review <Icon name="arrow" size={14}/></Button></td></tr>)}</tbody></table></div></section>
-    {selectedCandidate && <CandidateReviewModal candidate={selectedCandidate} onClose={() => setSelectedCandidate(null)}/>}
+    {error && <p className="demo-storage-error" role="alert">{error}</p>}
+    <section className="surface list-surface"><div className="table-wrap"><table><thead><tr><th>Candidate</th><th>Campaign</th><th>AI evaluation</th><th>Status</th><th>Applied</th><th/></tr></thead><tbody>{candidateRows.map((a, i) => <tr className="candidate-row" key={a.id || `${a.name}-${i}`} onClick={() => setSelectedCandidate(a)}><td><span className="person"><Avatar initials={a.initials} color={a.color}/><span><strong>{a.name}</strong><small>{a.email}</small></span></span></td><td>{a.role}</td><td><span className="score"><i style={{ "--score": `${a.score}%` } as React.CSSProperties}/><strong>{a.score}%</strong><small>AI-assisted</small></span></td><td><Badge tone={a.tone}>{a.status}</Badge></td><td className="muted">{a.time}</td><td><Button variant="ghost" onClick={event => { event.stopPropagation(); setSelectedCandidate(a); }}>Review <Icon name="arrow" size={14}/></Button></td></tr>)}</tbody></table></div></section>
+    {selectedCandidate && <CandidateReviewModal candidate={selectedCandidate} onClose={() => setSelectedCandidate(null)} onStatusChange={selectedCandidate.id ? status => {
+      const applicationId = selectedCandidate.id;
+      if (!applicationId || !updateApplicationStatus(applicationId, status)) return false;
+      setSelectedCandidate(current => current ? { ...current, status, tone: status === "Interview" || status === "Shortlisted" ? "success" : status === "Closed" ? "neutral" : "info" } : current);
+      return true;
+    } : undefined}/>}
   </div>;
 }
 
 type ReviewTab = "Overview" | "Evaluation" | "Decision" | "Candidate's answers" | "Download Results";
 
-function CandidateReviewModal({ candidate, onClose }: { candidate: (typeof applicants)[number]; onClose: () => void }) {
+function CandidateReviewModal({ candidate, onClose, onStatusChange }: { candidate: ReviewCandidate; onClose: () => void; onStatusChange?: (status: DemoApplication["status"]) => boolean }) {
   const [tab, setTab] = useState<ReviewTab>("Overview");
   const [feedback, setFeedback] = useState("");
   const [decision, setDecision] = useState("");
+  const [decisionError, setDecisionError] = useState("");
   const tabs: ReviewTab[] = ["Overview", "Evaluation", "Decision", "Candidate's answers", "Download Results"];
-  const email = `${candidate.name.toLowerCase().replace(" ", ".")}@email.com`;
+  const email = candidate.email;
   const downloadResults = () => {
     const content = `Candidate review\n${candidate.name}\n${candidate.role}\nScore: ${candidate.score}/100\nStatus: ${candidate.status}\nFeedback: ${feedback || "None"}\nDecision: ${decision || "Not decided"}`;
     const url = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
@@ -241,8 +268,21 @@ function CandidateReviewModal({ candidate, onClose }: { candidate: (typeof appli
       <div className="review-modal-body">
         {tab === "Overview" && <div className="review-overview"><div className="review-score-card"><span>Overall score</span><strong>{candidate.score}<small>/100</small></strong><div className="score-bar"><i style={{ width: `${candidate.score}%` }}/></div><p>AI-assisted evaluation</p></div><div className="review-summary-card"><h3>Candidate summary</h3><p>{candidate.name} shows relevant product design experience with a {candidate.score}% skills match for this role. Their strongest signals are user-centred thinking, collaboration, and delivery across the product lifecycle.</p><div className="summary-grid"><span><small>Experience</small><strong>{candidate.score === "84" ? "2–3 years" : "5+ years"}</strong></span><span><small>Skills match</small><strong>{candidate.score}%</strong></span><span><small>Role fit</small><strong>{candidate.score === "84" ? "Junior profile" : "Strong match"}</strong></span></div></div><div className="outcome-note"><Icon name="target"/><div><strong>Outcome rationale</strong><p>{candidate.score === "84" ? "The candidate may be below the seniority bar for this role. Consider a junior or mid-level opening." : "The candidate demonstrates a strong match for the role level and should progress to a human review."}</p></div></div></div>}
         {tab === "Evaluation" && <div className="review-tab-card"><h3>AI evaluation</h3><p>Use this recommendation as a starting point for human review, not as a final hiring decision.</p>{[["Relevant experience", candidate.score === "84" ? "72%" : "94%"], ["Skills alignment", `${candidate.score}%`], ["Application quality", "88%"]].map(item => <div className="evaluation-row" key={item[0]}><span><strong>{item[0]}</strong><small>AI-assisted signal</small></span><b>{item[1]}</b></div>)}<label className="field"><span className="field-label">Recruiter feedback</span><textarea value={feedback} onChange={event => setFeedback(event.target.value)} placeholder="Add notes about strengths, gaps, or follow-up questions…"/></label></div>}
-        {tab === "Decision" && <div className="review-tab-card"><h3>Record your decision</h3><p>Choose the next step and leave context for your hiring team.</p><label className="field"><span className="field-label">Hiring decision</span><select className="review-select" value={decision} onChange={event => setDecision(event.target.value)}><option value="">Select a decision</option><option>Move to interview</option><option>Shortlist</option><option>Keep in review</option><option>Decline</option></select></label><label className="field"><span className="field-label">Decision notes</span><textarea value={feedback} onChange={event => setFeedback(event.target.value)} placeholder="Explain the decision for your hiring team…"/></label><Button onClick={() => setTab("Overview")}>Save decision</Button></div>}
-        {tab === "Candidate's answers" && <div className="review-tab-card"><h3>Candidate's answers</h3><div className="answer-item"><strong>Why are you interested in this role?</strong><p>I’m excited by the opportunity to solve meaningful customer problems with a thoughtful product team.</p></div><div className="answer-item"><strong>What is your proudest project?</strong><p>Improving a complex workflow by combining user research, prototyping, and close collaboration with engineering.</p></div></div>}
+        {tab === "Decision" && <div className="review-tab-card"><h3>Record your decision</h3><p>Choose the next step and leave context for your hiring team.</p><label className="field"><span className="field-label">Hiring decision</span><select className="review-select" value={decision} onChange={event => { setDecision(event.target.value); setDecisionError(""); }}><option value="">Select a decision</option><option>Move to interview</option><option>Shortlist</option><option>Keep in review</option><option>Decline</option></select></label><label className="field"><span className="field-label">Decision notes</span><textarea value={feedback} onChange={event => setFeedback(event.target.value)} placeholder="Explain the decision for your hiring team…"/></label>{decisionError && <p className="demo-storage-error" role="alert">{decisionError}</p>}<Button onClick={() => {
+          if (onStatusChange) {
+            const nextStatus: DemoApplication["status"] | undefined = decision === "Move to interview" ? "Interview" : decision === "Shortlist" ? "Shortlisted" : decision === "Keep in review" ? "In review" : decision === "Decline" ? "Closed" : undefined;
+            if (!nextStatus) {
+              setDecisionError("Choose a hiring decision before saving.");
+              return;
+            }
+            if (!onStatusChange(nextStatus)) {
+              setDecisionError("The updated status could not be saved. Please try again.");
+              return;
+            }
+          }
+          setTab("Overview");
+        }}>{onStatusChange ? "Update application" : "Save decision"}</Button></div>}
+        {tab === "Candidate's answers" && <div className="review-tab-card"><h3>Candidate's answers</h3>{candidate.demoApplication ? <><div className="answer-item"><strong>CV submitted</strong><p>{candidate.demoApplication.cvFileName} <span className="field-helper">(filename only; the file is not uploaded in demo mode)</span></p></div><div className="answer-item"><strong>Cover letter</strong><p>{candidate.demoApplication.coverLetter}</p></div></> : <><div className="answer-item"><strong>Why are you interested in this role?</strong><p>I’m excited by the opportunity to solve meaningful customer problems with a thoughtful product team.</p></div><div className="answer-item"><strong>What is your proudest project?</strong><p>Improving a complex workflow by combining user research, prototyping, and close collaboration with engineering.</p></div></>}</div>}
         {tab === "Download Results" && <div className="review-tab-card download-results"><span className="download-icon"><Icon name="file" size={24}/></span><h3>Download review results</h3><p>Export {candidate.name}'s score, summary, feedback, and decision as a text file for your records.</p><Button icon="file" onClick={downloadResults}>Download results</Button></div>}
       </div>
     </section>
@@ -382,7 +422,7 @@ function ApplicationFormBuilder({ onBack }: { onBack: () => void }) {
         </div>}
       </section>
       <section className="builder-preview-panel"><div className="preview-toolbar"><div><h3>Live preview</h3><p>Candidate view updates as you edit.</p></div><div className="viewport-controls" role="group" aria-label="Preview size">{(["phone", "tablet", "desktop"] as PreviewViewport[]).map(size => <button key={size} className={viewport === size ? "active" : ""} onClick={() => setViewport(size)}>{size[0].toUpperCase() + size.slice(1)}</button>)}</div></div>
-        <div className={`preview-stage ${viewport} ${darkTheme ? "preview-dark" : ""}`}><div className="candidate-preview" style={{ "--preview-brand": brandColor, "--preview-font": previewFont } as React.CSSProperties}><div className="preview-brand" style={bannerImage ? { backgroundImage: `linear-gradient(90deg, rgba(22, 25, 55, .72), rgba(22, 25, 55, .12)), url(${bannerImage})` } : undefined}><span className="preview-logo">N</span><span><strong>Northstar Labs</strong><small>Technology · Senior Product Designer</small></span></div><div className="preview-body"><Badge tone="success">Application open</Badge><h2>Senior Product Designer</h2><p>Tell us a little about yourself and your experience.</p>{blocks.map(block => <PreviewBlock key={block.id} block={block}/>)}</div></div></div>
+        <div className={`preview-stage ${viewport} ${darkTheme ? "preview-dark" : ""}`}><div className={`preview-device ${viewport}-device`} aria-label={viewport === "phone" ? "Samsung Galaxy S26 Ultra preview" : viewport === "tablet" ? "11-inch iPad A16 preview" : "Desktop preview"}>{viewport === "phone" && <><span className="phone-side-key phone-volume-key"/><span className="phone-side-key phone-power-key"/></>}{viewport === "tablet" && <span className="tablet-power-key"/>}<div className="candidate-preview" style={{ "--preview-brand": brandColor, "--preview-font": previewFont } as React.CSSProperties}><div className="preview-brand" style={bannerImage ? { backgroundImage: `linear-gradient(90deg, rgba(22, 25, 55, .72), rgba(22, 25, 55, .12)), url(${bannerImage})` } : undefined}><span className="preview-logo">N</span><span><strong>Northstar Labs</strong><small>Technology · Senior Product Designer</small></span></div><div className="preview-body"><Badge tone="success">Application open</Badge><h2>Senior Product Designer</h2><p>Tell us a little about yourself and your experience.</p>{blocks.map(block => <PreviewBlock key={block.id} block={block}/>)}</div></div></div></div>
         <div className="branding-controls"><div><h4>Theme & branding</h4><p>Customize the candidate experience.</p></div><label className="color-control"><span>Primary color</span><input type="color" value={brandColor} onChange={event => setBrandColor(event.target.value)}/></label><label className="font-control"><span>Font</span><select value={previewFont} onChange={event => setPreviewFont(event.target.value)}><option>DM Sans</option><option>Manrope</option><option>Georgia</option></select></label><label className="banner-control"><span>Header banner</span><span className="banner-upload"><Icon name="upload" size={13}/><span>Change image</span><input type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) setBannerImage(URL.createObjectURL(file)); }} /></span></label></div>
       </section>
     </div>
@@ -470,6 +510,107 @@ const jobs = [
   { title: "Design Systems Lead", company: "Meridian", image: asset("assets/workplaces/office-1.jpg"), location: "Cape Town", mode: "On-site", time: "1 week ago", match: 78, initials: "ME", tone: "amber" },
 ];
 
+type DemoApplication = {
+  id: string;
+  jobTitle: string;
+  company: string;
+  location: string;
+  match: number;
+  initials: string;
+  tone: string;
+  submittedAt: string;
+  status: "In review" | "Shortlisted" | "Interview" | "Closed";
+  cvFileName: string;
+  coverLetter: string;
+};
+
+function isDemoApplication(value: unknown): value is DemoApplication {
+  if (typeof value !== "object" || value === null) return false;
+  const application = value as Partial<DemoApplication>;
+  return typeof application.id === "string" &&
+    typeof application.jobTitle === "string" &&
+    typeof application.company === "string" &&
+    typeof application.location === "string" &&
+    typeof application.match === "number" &&
+    typeof application.initials === "string" &&
+    typeof application.tone === "string" &&
+    typeof application.submittedAt === "string" &&
+    (application.status === "In review" || application.status === "Shortlisted" || application.status === "Interview" || application.status === "Closed") &&
+    typeof application.cvFileName === "string" &&
+    typeof application.coverLetter === "string";
+}
+
+const applicationsStorageKey = "recruitflow.demoApplications";
+const applicationsUpdatedEvent = "recruitflow:demo-applications-updated";
+
+function readDemoApplications(): { applications: DemoApplication[]; error: string | null } {
+  try {
+    const saved = window.localStorage.getItem(applicationsStorageKey);
+    if (!saved) return { applications: [], error: null };
+    const parsed: unknown = JSON.parse(saved);
+    if (!Array.isArray(parsed) || !parsed.every(isDemoApplication)) {
+      throw new Error("Saved application data is not in the expected format.");
+    }
+    return { applications: parsed, error: null };
+  } catch (error) {
+    console.error("Could not load demo applications from browser storage.", error);
+    return { applications: [], error: "Saved applications could not be loaded from this browser." };
+  }
+}
+
+function useDemoApplications() {
+  const [data, setData] = useState(readDemoApplications);
+  useEffect(() => {
+    const syncApplications = () => setData(readDemoApplications());
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === applicationsStorageKey || event.key === null) syncApplications();
+    };
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(applicationsUpdatedEvent, syncApplications);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(applicationsUpdatedEvent, syncApplications);
+    };
+  }, []);
+  const saveApplication = (application: DemoApplication) => {
+    const latest = readDemoApplications();
+    const applications = [application, ...latest.applications];
+    try {
+      window.localStorage.setItem(applicationsStorageKey, JSON.stringify(applications));
+      setData({ applications, error: null });
+      window.dispatchEvent(new Event(applicationsUpdatedEvent));
+      return true;
+    } catch (error) {
+      console.error("Could not save the demo application to browser storage.", error);
+      setData(current => ({ ...current, error: "Your application could not be saved in this browser. Please try again." }));
+      return false;
+    }
+  };
+  const updateApplicationStatus = (id: string, status: DemoApplication["status"]) => {
+    const latest = readDemoApplications();
+    const applications = latest.applications.map(application => application.id === id ? { ...application, status } : application);
+    if (applications.every((application, index) => application === latest.applications[index])) return false;
+    try {
+      window.localStorage.setItem(applicationsStorageKey, JSON.stringify(applications));
+      setData({ applications, error: null });
+      window.dispatchEvent(new Event(applicationsUpdatedEvent));
+      return true;
+    } catch (error) {
+      console.error("Could not update the demo application in browser storage.", error);
+      setData(current => ({ ...current, error: "The application status could not be saved in this browser." }));
+      return false;
+    }
+  };
+  return { ...data, saveApplication, updateApplicationStatus };
+}
+
+function getApplicationProgress(status: DemoApplication["status"]) {
+  return {
+    interviewReached: status !== "In review",
+    decisionReached: status === "Closed",
+  };
+}
+
 // Visual-only readiness adapter: the original prototype has a 75% demo value.
 // A saved 100% value can be supplied by a profile persistence integration;
 // this patch does not change the existing Save or profile-edit behavior.
@@ -500,30 +641,43 @@ function WorkspaceShowcase({ audience }: { audience: "candidate" | "recruiter" }
 
 function CandidateDashboard() {
   const profileReadiness = getDisplayedProfileReadiness();
+  const { applications } = useDemoApplications();
+  const inReviewCount = applications.filter(application => application.status === "In review").length;
+  const interviewCount = applications.filter(application => application.status === "Interview").length;
   return <div><PageHeader eyebrow="Tuesday, 12 March" title="Welcome back, Alex" description="You’re making progress. Here’s what to focus on next." action={<Button icon="search" onClick={() => go("/candidate/jobs")}>Find jobs</Button>}/>
     {profileReadiness === 100 ? <WorkspaceShowcase audience="candidate"/> : <div className="candidate-hero"><div><span className="eyebrow">Your profile</span><h2>Stand out to the right employers</h2><p>Your profile is {profileReadiness}% ready. Add your recent work experience to unlock stronger job matches.</p><Button variant="secondary" onClick={() => go("/candidate/settings/profile-readiness")}>Complete your profile <Icon name="arrow" size={15}/></Button></div><div className="readiness-ring"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><circle className="ring-value" cx="40" cy="40" r="34" style={{ "--ring-fill": `${Math.round((profileReadiness / 100) * 214)} 214` } as React.CSSProperties}/></svg><span><strong>{profileReadiness}%</strong><small>ready</small></span></div></div>}
-    <div className="application-stats">{[["Applications", "7", "2 updated this week"], ["In review", "3", "Recruiters are reviewing"], ["Interviews", "1", "Next: Friday at 10:00"]].map((x, i) => <div key={x[0]}><span className={`metric-icon metric-${["blue", "amber", "green"][i]}`}><Icon name={["file", "clock", "calendar"][i] as IconName}/></span><span><small>{x[0]}</small><strong>{x[1]}</strong><p>{x[2]}</p></span></div>)}</div>
+    <div className="application-stats">{[["Applications", String(applications.length), "Your submitted applications"], ["In review", String(inReviewCount), "With hiring teams"], ["Interviews", String(interviewCount), "Ready for your next step"]].map((x, i) => <div key={x[0]}><span className={`metric-icon metric-${["blue", "amber", "green"][i]}`}><Icon name={["file", "clock", "calendar"][i] as IconName}/></span><span><small>{x[0]}</small><strong>{x[1]}</strong><p>{x[2]}</p></span></div>)}</div>
     <section className="recommended"><div className="section-header"><div><h2>Recommended for you</h2><p>Based on your skills and preferences</p></div><button className="text-btn" onClick={() => go("/candidate/jobs")}>Browse all jobs <Icon name="arrow" size={14}/></button></div><div className="job-grid">{jobs.slice(0, 3).map(j => <JobCard job={j} key={j.title}/>)}</div></section>
   </div>;
 }
 
-function JobCard({ job, selected = false, onClick }: { job: typeof jobs[0]; selected?: boolean; onClick?: () => void }) {
+function JobCard({ job, selected = false, onClick, onApply, applied = false }: { job: typeof jobs[0]; selected?: boolean; onClick?: () => void; onApply?: () => void; applied?: boolean }) {
   const [saved, setSaved] = useState(false);
-  return <article className={`job-card ${selected ? "selected" : ""}`} onClick={onClick}><div className="job-card-photo" aria-hidden="true"><img src={job.image} alt="" loading="lazy" /></div><div className="job-card-top"><span className={`company-logo logo-${job.tone}`}>{job.initials}</span><button className={`icon-btn ${saved ? "saved" : ""}`} onClick={e => { e.stopPropagation(); setSaved(!saved); }} aria-label="Save job"><Icon name="bookmark"/></button></div><h3>{job.title}</h3><p className="company">{job.company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{job.location}</span><span><Icon name="briefcase" size={14}/>{job.mode}</span></div><div className="job-footer"><span className="match"><Icon name="sparkles" size={14}/>{job.match}% match</span><small>{job.time}</small></div></article>;
+  return <article className={`job-card ${selected ? "selected" : ""}`} onClick={onClick}><div className="job-card-photo" aria-hidden="true"><img src={job.image} alt="" loading="lazy" /></div><div className="job-card-top"><span className={`company-logo logo-${job.tone}`}>{job.initials}</span><button className={`icon-btn ${saved ? "saved" : ""}`} onClick={e => { e.stopPropagation(); setSaved(!saved); }} aria-label="Save job"><Icon name="bookmark"/></button></div><h3>{job.title}</h3><p className="company">{job.company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{job.location}</span><span><Icon name="briefcase" size={14}/>{job.mode}</span></div><div className="job-footer"><span className="match"><Icon name="sparkles" size={14}/>{job.match}% match</span><small>{job.time}</small></div>{onApply && <button className={`btn ${applied ? "btn-secondary" : "btn-primary"} job-card-apply`} disabled={applied} onClick={event => { event.stopPropagation(); onApply(); }}><span>{applied ? "Application sent" : "Apply now"}</span></button>}</article>;
 }
 
 function JobsPage() {
   const [selected, setSelected] = useState(0);
   const [applicationJob, setApplicationJob] = useState<typeof jobs[0] | null>(null);
+  const { applications, error, saveApplication } = useDemoApplications();
+  const appliedJobTitles = new Set(applications.map(application => application.jobTitle));
   return <div><PageHeader eyebrow="Opportunities" title="Find your next role" description="Explore opportunities matched to your skills and preferences."/>
     <div className="job-search-bar"><label className="search"><Icon name="search"/><input placeholder="Job title, skill or company"/></label><label className="search location-search"><Icon name="location"/><input placeholder="Location"/></label><Button>Search jobs</Button></div>
     <div className="filter-row"><Button variant="secondary" icon="filter">All filters</Button>{["Remote", "Hybrid", "Design", "Full-time"].map(f => <button className="filter-pill" key={f}>{f}<Icon name="close" size={13}/></button>)}<span className="results-count">48 opportunities</span></div>
-    <div className="jobs-layout"><div className="results-list">{jobs.map((j, i) => <JobCard job={j} key={j.title} selected={selected === i} onClick={() => setSelected(i)}/>)}</div><aside className="job-detail"><div className="job-detail-photo" key={jobs[selected].image}><img src={jobs[selected].image} alt="" /></div><div className="detail-header"><span className={`company-logo logo-${jobs[selected].tone}`}>{jobs[selected].initials}</span><button className="icon-btn"><Icon name="bookmark"/></button></div><h2>{jobs[selected].title}</h2><p className="company">{jobs[selected].company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{jobs[selected].location}</span><span><Icon name="briefcase" size={14}/>{jobs[selected].mode}</span></div><div className="match-banner"><Icon name="sparkles"/><span><strong>{jobs[selected].match}% profile match</strong><small>Your skills align strongly with this role.</small></span></div><Button className="full" onClick={() => setApplicationJob(jobs[selected])}>Apply now</Button><div className="detail-copy"><h3>About the role</h3><p>Join a collaborative product team shaping thoughtful digital experiences. You’ll partner closely with product, engineering and research to solve meaningful customer problems.</p><h3>What you’ll bring</h3><ul><li>5+ years of product design experience</li><li>Strong portfolio of end-to-end product work</li><li>Experience with accessible design systems</li></ul></div></aside></div>
-    {applicationJob && <ApplicationDialog job={applicationJob} onClose={() => setApplicationJob(null)}/>}
+    {error && <p className="demo-storage-error" role="alert">{error}</p>}
+    <div className="jobs-layout"><div className="results-list">{jobs.map((j, i) => <JobCard job={j} key={j.title} selected={selected === i} applied={appliedJobTitles.has(j.title)} onClick={() => setSelected(i)} onApply={() => setApplicationJob(j)}/>)}</div><aside className="job-detail"><div className="job-detail-photo" key={jobs[selected].image}><img src={jobs[selected].image} alt="" /></div><div className="detail-header"><span className={`company-logo logo-${jobs[selected].tone}`}>{jobs[selected].initials}</span><button className="icon-btn"><Icon name="bookmark"/></button></div><h2>{jobs[selected].title}</h2><p className="company">{jobs[selected].company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{jobs[selected].location}</span><span><Icon name="briefcase" size={14}/>{jobs[selected].mode}</span></div><div className="match-banner"><Icon name="sparkles"/><span><strong>{jobs[selected].match}% profile match</strong><small>Your skills align strongly with this role.</small></span></div><Button className="full" disabled={appliedJobTitles.has(jobs[selected].title)} variant={appliedJobTitles.has(jobs[selected].title) ? "secondary" : "primary"} onClick={() => setApplicationJob(jobs[selected])}>{appliedJobTitles.has(jobs[selected].title) ? "Application sent" : "Apply now"}</Button><div className="detail-copy"><h3>About the role</h3><p>Join a collaborative product team shaping thoughtful digital experiences. You’ll partner closely with product, engineering and research to solve meaningful customer problems.</p><h3>What you’ll bring</h3><ul><li>5+ years of product design experience</li><li>Strong portfolio of end-to-end product work</li><li>Experience with accessible design systems</li></ul></div></aside></div>
+    {applicationJob && <ApplicationDialog job={applicationJob} onClose={() => setApplicationJob(null)} onSubmit={application => {
+      if (!saveApplication(application)) return false;
+      go("/candidate/application-confirmation");
+      return true;
+    }}/>}
   </div>;
 }
 
-function ApplicationDialog({ job, onClose }: { job: typeof jobs[0]; onClose: () => void }) {
+function ApplicationDialog({ job, onClose, onSubmit }: { job: typeof jobs[0]; onClose: () => void; onSubmit: (application: DemoApplication) => boolean }) {
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [coverLetter, setCoverLetter] = useState("");
+  const [submitError, setSubmitError] = useState("");
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -535,9 +689,20 @@ function ApplicationDialog({ job, onClose }: { job: typeof jobs[0]; onClose: () 
   return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="application-dialog" role="dialog" aria-modal="true" aria-labelledby="application-dialog-title">
       <div className="dialog-header"><div><span className="eyebrow">Apply to {job.company}</span><h2 id="application-dialog-title">{job.title}</h2><p>Share your CV and a short cover letter with the hiring team.</p></div><button className="icon-btn" onClick={onClose} aria-label="Close application dialog"><Icon name="close"/></button></div>
-      <form onSubmit={event => { event.preventDefault(); onClose(); }}>
-        <label className="file-field"><span className="field-label">CV <span aria-hidden="true">*</span></span><span className="file-input"><Icon name="file" size={17}/><input type="file" accept=".pdf,.doc,.docx" required/><span>Choose a PDF or Word document</span></span><span className="field-helper">Accepted formats: PDF, DOC or DOCX.</span></label>
-        <label className="field field-full"><span className="field-label">Cover letter <span aria-hidden="true">*</span></span><textarea required placeholder="Tell the hiring team why you’re a great fit for this role…"/><span className="field-helper">A thoughtful, role-specific note is usually most helpful.</span></label>
+      <form onSubmit={event => {
+        event.preventDefault();
+        const letter = coverLetter.trim();
+        if (!cvFile || !letter) {
+          setSubmitError(!cvFile ? "Please attach your CV before submitting." : "Please add a short cover letter before submitting.");
+          return;
+        }
+        if (!onSubmit({ id: `${Date.now()}`, jobTitle: job.title, company: job.company, location: job.location, match: job.match, initials: job.initials, tone: job.tone, submittedAt: new Date().toISOString(), status: "In review", cvFileName: cvFile.name, coverLetter: letter })) {
+          setSubmitError("We couldn’t save your application in this browser. Please try again.");
+        }
+      }}>
+        <label className="file-field"><span className="field-label">CV <span aria-hidden="true">*</span></span><span className="file-input"><Icon name="file" size={17}/><input type="file" accept=".pdf,.doc,.docx" aria-required="true" onChange={event => { setCvFile(event.target.files?.[0] || null); setSubmitError(""); }}/><span>{cvFile?.name || "Choose a PDF or Word document"}</span></span><span className="field-helper">Demo mode saves the filename only; your file is not uploaded.</span></label>
+        <label className="field field-full"><span className="field-label">Cover letter <span aria-hidden="true">*</span></span><textarea required value={coverLetter} onChange={event => { setCoverLetter(event.target.value); setSubmitError(""); }} placeholder="Tell the hiring team why you’re a great fit for this role…"/><span className="field-helper">A thoughtful, role-specific note is usually most helpful.</span></label>
+        {submitError && <p className="demo-storage-error" role="alert">{submitError}</p>}
         <div className="dialog-footer"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit">Submit application</Button></div>
       </form>
     </section>
@@ -545,21 +710,49 @@ function ApplicationDialog({ job, onClose }: { job: typeof jobs[0]; onClose: () 
 }
 
 function ApplicationsPage() {
-  const [selected, setSelected] = useState(0);
-  const selectedJob = jobs[selected];
-  const selectedStatus = selected === 3 ? "Closed" : selected === 2 ? "Interview" : "In review";
+  const { applications, error } = useDemoApplications();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"All" | "In progress" | "Closed">("All");
+  const filteredApplications = applications.filter(application => filter === "All" || (filter === "Closed" ? application.status === "Closed" : application.status !== "Closed"));
+  const selectedApplication = filteredApplications.find(application => application.id === selectedId) || filteredApplications[0];
   return <div><PageHeader eyebrow="Your job search" title="My applications" description="Track your applications and see what happens next."/>
-    <div className="tabs"><button className="active">All <span>7</span></button><button>In progress <span>4</span></button><button>Closed <span>3</span></button></div>
-    <div className="applications-layout">
-      <section className="application-list">{jobs.map((j, i) => <article className={`application-row ${selected === i ? "selected" : ""}`} key={j.title} onClick={() => setSelected(i)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(i); } }} tabIndex={0} aria-label={`View application for ${j.title}`}><span className={`company-logo logo-${j.tone}`}>{j.initials}</span><div className="application-main"><h3>{j.title}</h3><p>{j.company} · {j.location}</p><small>Applied {i + 2} days ago</small></div><div className="status-timeline"><span className="complete"><i><Icon name="check" size={12}/></i>Applied</span><b/><span className={i < 3 ? "current" : ""}><i>{i < 3 ? <Icon name="clock" size={12}/> : null}</i>In review</span><b/><span><i/>Decision</span></div><Badge tone={i === 3 ? "neutral" : i === 2 ? "success" : "info"}>{i === 3 ? "Closed" : i === 2 ? "Interview" : "In review"}</Badge><span className="icon-btn"><Icon name="chevron"/></span></article>)}</section>
-      <aside className="application-info">
-        <div className="application-info-heading"><span className={`company-logo logo-${selectedJob.tone}`}>{selectedJob.initials}</span><div><span className="eyebrow">Application details</span><h2>{selectedJob.title}</h2><p>{selectedJob.company} · {selectedJob.location}</p></div></div>
-        <Badge tone={selected === 3 ? "neutral" : selected === 2 ? "success" : "info"}>{selectedStatus}</Badge>
-        <div className="application-result"><span className="metric-icon metric-green"><Icon name="sparkles"/></span><div><strong>{selectedJob.match}% match</strong><p>Your profile match result for this role.</p></div></div>
-        <div className="application-info-section"><h3>Application timeline</h3><div className="info-timeline"><span className="complete"><i><Icon name="check" size={12}/></i><span><strong>Application submitted</strong><small>{selectedJob.time}</small></span></span><span className={selected < 3 ? "current" : ""}><i>{selected < 3 && <Icon name="clock" size={12}/>}</i><span><strong>In review</strong><small>{selected === 3 ? "No longer active" : "Recruiter is reviewing your application"}</small></span></span><span><i/><span><strong>Decision</strong><small>We’ll notify you when there’s an update</small></span></span></div></div>
-        <Button variant="secondary" className="full">View job details</Button>
-      </aside>
-    </div>
+    {error && <p className="demo-storage-error" role="alert">{error}</p>}
+    {!applications.length ? <section className="applications-empty"><span className="download-icon"><Icon name="file" size={25}/></span><h2>No applications yet</h2><p>When you apply to a role, you can track its progress here.</p><Button icon="search" onClick={() => go("/candidate/jobs")}>Explore open roles</Button></section> :
+      <><div className="tabs">{(["All", "In progress", "Closed"] as const).map(tab => <button key={tab} className={filter === tab ? "active" : ""} onClick={() => { setFilter(tab); setSelectedId(null); }}>{tab} <span>{tab === "All" ? applications.length : tab === "Closed" ? applications.filter(application => application.status === "Closed").length : applications.filter(application => application.status !== "Closed").length}</span></button>)}</div>
+        <div className="applications-layout">
+          <section className="application-list">{filteredApplications.length ? filteredApplications.map(application => {
+            const progress = getApplicationProgress(application.status);
+            return <article className={`application-row ${selectedApplication?.id === application.id ? "selected" : ""}`} key={application.id} onClick={() => setSelectedId(application.id)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(application.id); } }} tabIndex={0} aria-label={`View application for ${application.jobTitle}`}><span className={`company-logo logo-${application.tone}`}>{application.initials}</span><div className="application-main"><h3>{application.jobTitle}</h3><p>{application.company} · {application.location}</p><small>Applied {new Date(application.submittedAt).toLocaleDateString()}</small></div><div className="status-timeline" aria-label={`Application progress: Applied${progress.interviewReached ? ", Interview" : ""}${progress.decisionReached ? ", Decision" : ""}`}><span className="complete"><i><Icon name="check" size={12}/></i>Applied</span><b/><span className={progress.interviewReached ? "complete" : "current"}><i>{progress.interviewReached ? <Icon name="check" size={12}/> : <Icon name="clock" size={12}/>}</i>Interview</span><b/><span className={progress.decisionReached ? "complete" : ""}><i>{progress.decisionReached && <Icon name="check" size={12}/>}</i>Decision</span></div><Badge tone={application.status === "Interview" || application.status === "Shortlisted" ? "success" : application.status === "Closed" ? "neutral" : "info"}>{application.status}</Badge><span className="icon-btn"><Icon name="chevron"/></span></article>;
+          }) : <div className="applications-empty"><h2>No {filter.toLowerCase()} applications</h2><p>Try a different filter to see your applications.</p><Button variant="secondary" onClick={() => setFilter("All")}>View all applications</Button></div>}</section>
+          {selectedApplication && <aside className="application-info">
+            <div className="application-info-heading"><span className={`company-logo logo-${selectedApplication.tone}`}>{selectedApplication.initials}</span><div><span className="eyebrow">Application details</span><h2>{selectedApplication.jobTitle}</h2><p>{selectedApplication.company} · {selectedApplication.location}</p></div></div>
+            <Badge tone={selectedApplication.status === "Interview" ? "success" : selectedApplication.status === "Closed" ? "neutral" : "info"}>{selectedApplication.status}</Badge>
+            <div className="application-result"><span className="metric-icon metric-green"><Icon name="sparkles"/></span><div><strong>{selectedApplication.match}% match</strong><p>Your profile match result for this role.</p></div></div>
+            <div className="application-info-section"><h3>Application timeline</h3><div className="info-timeline"><span className="complete"><i><Icon name="check" size={12}/></i><span><strong>Application submitted</strong><small>{new Date(selectedApplication.submittedAt).toLocaleString()}</small></span></span><span className={getApplicationProgress(selectedApplication.status).interviewReached ? "complete" : "current"}><i>{getApplicationProgress(selectedApplication.status).interviewReached ? <Icon name="check" size={12}/> : <Icon name="clock" size={12}/>}</i><span><strong>{selectedApplication.status === "In review" ? "In review" : selectedApplication.status === "Shortlisted" ? "Shortlisted" : "Interview"}</strong><small>{selectedApplication.status === "In review" ? "Your application is with the hiring team." : selectedApplication.status === "Shortlisted" ? "The hiring team has shortlisted your application." : "The hiring team has invited you to interview."}</small></span></span><span className={getApplicationProgress(selectedApplication.status).decisionReached ? "complete" : ""}><i>{getApplicationProgress(selectedApplication.status).decisionReached && <Icon name="check" size={12}/>}</i><span><strong>Decision</strong><small>{getApplicationProgress(selectedApplication.status).decisionReached ? "The hiring team has closed this application." : "We’ll notify you when there’s an update."}</small></span></span></div></div>
+            <div className="application-info-section"><h3>Submitted with</h3><p className="application-file-name"><Icon name="file" size={15}/>{selectedApplication.cvFileName}</p></div>
+            <Button variant="secondary" className="full" onClick={() => go("/candidate/jobs")}>Browse more roles</Button>
+          </aside>}
+        </div>
+      </>}
+  </div>;
+}
+
+function ApplicationConfirmationPage() {
+  const { applications, error } = useDemoApplications();
+  const application = applications[0];
+  if (!application) return <div className="application-confirmation-page"><section className="application-confirmation-card"><span className="confirmation-icon"><Icon name="file" size={26}/></span><span className="eyebrow">Nothing to confirm</span><h1>No recent application.</h1><p className="confirmation-lede">Start by exploring open roles. Once you submit an application, you’ll find its confirmation and tracking details here.</p>{error && <p className="demo-storage-error" role="alert">{error}</p>}<div className="confirmation-actions"><Button icon="search" onClick={() => go("/candidate/jobs")}>Explore open roles</Button><Button variant="secondary" onClick={() => go("/candidate/applications")}>My applications</Button></div></section></div>;
+  return <div className="application-confirmation-page">
+    <section className="application-confirmation-card">
+      <span className="confirmation-icon"><Icon name="check" size={28}/></span>
+      <span className="eyebrow">Application submitted</span>
+      <h1>You’re one step closer.</h1>
+      <p className="confirmation-lede">Your application has been sent to the hiring team. We’ll keep everything organised here so you can focus on what’s next.</p>
+      {application && <div className="confirmation-job"><span className={`company-logo logo-${application.tone}`}>{application.initials}</span><span><strong>{application.jobTitle}</strong><small>{application.company} · {application.location}</small></span><Badge tone="info">In review</Badge></div>}
+      <div className="confirmation-next"><div><span>01</span><p><strong>We’ve got your application</strong><small>Your details and CV are saved in this demo.</small></p></div><div><span>02</span><p><strong>The team reviews your profile</strong><small>Track progress any time from My applications.</small></p></div></div>
+      {error && <p className="demo-storage-error" role="alert">{error}</p>}
+      <div className="confirmation-actions"><Button onClick={() => go("/candidate/applications")}>Track my application <Icon name="arrow" size={15}/></Button><Button variant="secondary" onClick={() => go("/candidate/jobs")}>Explore more roles</Button></div>
+      <p className="demo-note"><Icon name="lock" size={13}/> Demo mode: your application details are saved in this browser only.</p>
+    </section>
   </div>;
 }
 
@@ -567,9 +760,10 @@ function ProfilePage() {
   const profileReadiness = getDisplayedProfileReadiness();
   const [section, setSection] = useState("Personal details");
   const sections = [["Personal details", true], ["CV & documents", true], ["Skills", true], ["Work experience", false], ["Education", false], ["Preferences", true]] as const;
-  return <div><PageHeader eyebrow="My profile" title="Profile readiness" description="A complete profile helps employers understand your experience and improves job matches." action={<Button>Save changes</Button>}/>
+  return <div><PageHeader eyebrow="My profile" title="Profile readiness" description="A complete profile helps employers understand your experience and improves job matches."/>
     <div className="profile-summary"><div className="readiness-ring small"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><circle className="ring-value" cx="40" cy="40" r="34" style={{ "--ring-fill": `${Math.round((profileReadiness / 100) * 214)} 214` } as React.CSSProperties}/></svg><span><strong>{profileReadiness}%</strong></span></div><div><h2>{profileReadiness === 100 ? "Your profile is ready" : "Your profile is almost ready"}</h2><p>{profileReadiness === 100 ? "Your profile is complete and ready for matched opportunities." : "Complete 2 remaining sections to make your profile visible for all matched opportunities."}</p>{profileReadiness !== 100 && <div className="missing"><span><Icon name="clock" size={14}/> Add work experience</span><span><Icon name="clock" size={14}/> Add education</span></div>}</div></div>
     <div className="editor-layout profile-layout"><aside className="section-nav">{sections.map(([s, done]) => <button className={section === s ? "active" : ""} key={s} onClick={() => setSection(s)}>{done ? <span className="done"><Icon name="check" size={13}/></span> : <span/>}{s}<small>{done ? "Complete" : "Missing"}</small></button>)}</aside><section className="form-page"><div className="form-heading"><span className="step-icon"><Icon name="user"/></span><div><h2>{section}</h2><p>Keep your information accurate and up to date.</p></div></div><div className="avatar-upload"><Avatar initials="AM" color="purple" size="lg"/><div><strong>Profile photo</strong><p>JPG or PNG, up to 5 MB.</p><Button variant="secondary" icon="upload">Upload new photo</Button></div></div><div className="form-grid"><Field label="First name" placeholder="Alex"/><Field label="Last name" placeholder="Morgan"/><Field label="Email address" icon="mail" placeholder="alex@example.com"/><Field label="Phone number" placeholder="+27 72 000 0000"/><Field label="Location" icon="location" placeholder="Cape Town, South Africa"/><Field label="Professional headline" placeholder="Senior Product Designer"/></div><label className="field field-full"><span className="field-label">Professional summary</span><textarea defaultValue="Product designer focused on clear, accessible experiences for complex digital products."/></label></section></div>
+    <div className="profile-actions"><Button>Save changes</Button></div>
   </div>;
 }
 
@@ -584,14 +778,14 @@ function BillingPage() {
   </div>;
 }
 
-function AuthPage({ kind = "login" }: { kind?: "login" | "forgot" | "reset" | "invite" | "apply" | "thanks" | "access" | "unavailable" | "404" }) {
+function AuthPage({ kind = "login" }: { kind?: "login" | "signup" | "forgot" | "reset" | "invite" | "apply" | "thanks" | "access" | "unavailable" | "404" }) {
   const [persona, setPersona] = useState("candidate");
   if (kind === "404" || kind === "access" || kind === "unavailable" || kind === "thanks") {
     const data = kind === "404" ? ["404", "This page took a different path", "We couldn’t find the page you’re looking for.", "Go to overview"] : kind === "thanks" ? ["check", "Application received", "Your application has been submitted successfully. The employer will contact you if there is an update.", "Back to opportunities"] : kind === "access" ? ["clock", "Your access is under review", "Northstar Labs is reviewing your recruiter access. You can safely return later.", "Sign out"] : ["building", "No recruiter workspace available", "This account isn’t connected to an eligible organisation workspace yet.", "Return to sign in"];
     return <div className="public-page"><header className="public-header"><Logo/><Button variant="ghost" onClick={() => go("/login")}>Sign in</Button></header><main className="state-page"><div className={`state-icon state-${kind}`} >{data[0] === "404" ? <strong>404</strong> : <Icon name={data[0] as IconName} size={30}/>}</div><h1>{data[1]}</h1><p>{data[2]}</p><Button onClick={() => go(kind === "thanks" ? "/candidate/jobs" : kind === "404" ? "/candidate" : "/login")}>{data[3]}</Button>{kind === "unavailable" && <Button variant="ghost">Accept an organisation invitation</Button>}</main></div>;
   }
   if (kind === "apply") return <PublicApplication/>;
-  const copy = kind === "forgot" ? ["Reset your password", "Enter your email and we’ll send reset instructions if an account exists.", "Send reset link"] : kind === "reset" ? ["Choose a new password", "Create a strong password you don’t use elsewhere.", "Reset password"] : kind === "invite" ? ["Join Northstar Labs", "You’ve been invited to join the recruiter workspace as a Recruiter.", "Accept invitation"] : ["Welcome to RecruitFlow", "Sign in to continue to your workspace.", "Sign in"];
+  const copy = kind === "signup" ? ["Create your account", "Join RecruitFlow to find your next opportunity or build your team.", "Create account"] : kind === "forgot" ? ["Reset your password", "Enter your email and we’ll send reset instructions if an account exists.", "Send reset link"] : kind === "reset" ? ["Choose a new password", "Create a strong password you don’t use elsewhere.", "Reset password"] : kind === "invite" ? ["Join Northstar Labs", "You’ve been invited to join the recruiter workspace as a Recruiter.", "Accept invitation"] : ["Welcome to RecruitFlow", "Sign in to continue to your workspace.", "Sign in"];
   return <div className={`auth-layout ${kind === "login" ? "auth-login" : ""}`}><aside className="auth-aside">{kind === "login" ? <>
     <div className="auth-brand-lockup"><Logo/><span>by Refrane</span></div>
     <div className="auth-feature">
@@ -606,16 +800,18 @@ function AuthPage({ kind = "login" }: { kind?: "login" | "forgot" | "reset" | "i
     </div>
     <p className="aside-foot">RecruitFlow by Refrane</p>
   </> : <><Logo/><div className="auth-message"><div className="auth-photo-stack" aria-hidden="true"><div className="auth-photo-main"><img src={asset("assets/workplaces/office-2.jpg")} alt="" /></div><div className="auth-photo-portrait"><img src={asset("assets/people/person-1.jpg")} alt="" /></div><div className="auth-photo-pill"><span className="auth-mini-avatars"><img src={asset("assets/people/person-2.jpg")} alt=""/><img src={asset("assets/people/person-3.jpg")} alt=""/><img src={asset("assets/people/person-4.jpg")} alt=""/></span><span>People, connected.</span></div></div><span className="quote-mark">“</span><blockquote>Hiring is about more than filling roles. RecruitFlow helps teams make every candidate interaction count.</blockquote><div className="quote-person"><Avatar initials="SO" color="green"/><span><strong>Sophie Okafor</strong><small>People Operations, Northstar Labs</small></span></div></div><p className="aside-foot">Trusted by growing teams to hire thoughtfully.</p></>}</aside><main className="auth-main"><div className="mobile-logo"><Logo/></div><div className="auth-form"><div className="auth-heading">{kind === "login" && <span className="auth-kicker">RecruitFlow</span>}<h1>{copy[0]}</h1><p>{copy[1]}</p></div>
-    {kind === "login" && <div className="persona-switch"><button className={persona === "candidate" ? "active" : ""} onClick={() => setPersona("candidate")}><Icon name="user"/>Candidate</button><button className={persona === "recruiter" ? "active" : ""} onClick={() => setPersona("recruiter")}><Icon name="building"/>Recruiter</button></div>}
+    {(kind === "login" || kind === "signup") && <><div className="persona-switch"><button type="button" className={persona === "candidate" ? "active" : ""} onClick={() => setPersona("candidate")}><Icon name="user"/>Candidate</button><button type="button" className={persona === "recruiter" ? "active" : ""} onClick={() => setPersona("recruiter")}><Icon name="building"/>Recruiter</button></div>{kind === "login" && <p className="persona-message" role="status" aria-live="polite">You’re signing in as a {persona}.</p>}</>}
     {kind === "invite" && <div className="invite-card"><span className="org-icon">N</span><span><strong>Northstar Labs</strong><small>Recruiter workspace · Invited by Sophie</small></span></div>}
-    <form onSubmit={e => { e.preventDefault(); const target = kind === "login" ? `/${persona}` : kind === "invite" ? "/recruiter" : "/login"; if (kind === "login" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) { e.currentTarget.closest(".auth-layout")?.classList.add("auth-exiting"); window.setTimeout(() => go(target), 350); } else { go(target); } }}>
-      {kind !== "reset" && <Field label="Email address" icon="mail" placeholder="you@example.com" type="email"/>}
-      {(kind === "login" || kind === "reset" || kind === "invite") && <Field label={kind === "reset" ? "New password" : "Password"} icon="lock" placeholder="Enter your password" type="password" helper={kind === "reset" ? "At least 8 characters with a number and symbol." : undefined}/>}
-      {kind === "reset" && <Field label="Confirm new password" icon="lock" placeholder="Repeat your password" type="password"/>}
+    <form onSubmit={e => { e.preventDefault(); if (kind === "signup") { const passwords = e.currentTarget.querySelectorAll<HTMLInputElement>('input[type="password"]'); passwords[1].setCustomValidity(""); if (passwords[0].value !== passwords[1].value) { passwords[1].setCustomValidity("Passwords must match."); passwords[1].reportValidity(); return; } } const target = kind === "login" || kind === "signup" ? `/${persona}` : kind === "invite" ? "/recruiter" : "/login"; if (kind === "login" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) { e.currentTarget.closest(".auth-layout")?.classList.add("auth-exiting"); window.setTimeout(() => go(target), 350); } else { go(target); } }}>
+      {kind === "signup" && <Field label="Full name" icon="user" placeholder="Your name" required/>}
+      {kind !== "reset" && <Field label="Email address" icon="mail" placeholder="you@example.com" type="email" required={kind === "signup"}/>}
+      {(kind === "login" || kind === "signup" || kind === "reset" || kind === "invite") && <Field label={kind === "reset" ? "New password" : "Password"} icon="lock" placeholder="Enter your password" type="password" helper={kind === "reset" || kind === "signup" ? "Use at least 8 characters." : undefined} required={kind === "signup"} minLength={kind === "signup" ? 8 : undefined}/>}
+      {(kind === "reset" || kind === "signup") && <Field label={kind === "signup" ? "Confirm password" : "Confirm new password"} icon="lock" placeholder="Repeat your password" type="password" required={kind === "signup"} minLength={kind === "signup" ? 8 : undefined} onChange={kind === "signup" ? e => e.currentTarget.setCustomValidity("") : undefined}/>}
       {kind === "login" && <div className="form-options"><label><input type="checkbox"/>Remember me</label><button type="button" onClick={() => go("/forgot-password")}>Forgot password?</button></div>}
       <Button type="submit" className="full">{copy[2]}</Button>
     </form>
-    {kind === "login" && <><div className="or"><span/>or continue with<span/></div><Button variant="secondary" className="full"><b className="google-g">G</b>Continue with Google</Button><p className="auth-bottom">New to RecruitFlow? <button>Create an account</button></p></>}
+    {kind === "login" && <><div className="or"><span/>or continue with<span/></div><Button variant="secondary" className="full"><b className="google-g">G</b>Continue with Google</Button><p className="auth-bottom">New to RecruitFlow? <button onClick={() => go("/create-account")}>Create an account</button></p></>}
+    {kind === "signup" && <p className="auth-bottom">Already have an account? <button onClick={() => go("/login")}>Sign in</button></p>}
     {kind !== "login" && <button className="back-link" onClick={() => go("/login")}>← Back to sign in</button>}
   </div></main></div>;
 }
@@ -629,16 +825,18 @@ function App() {
   useEffect(() => { const handler = () => setPath(window.location.pathname); window.addEventListener("popstate", handler); return () => window.removeEventListener("popstate", handler); }, []);
   const content = useMemo(() => {
     if (path === "/" || path === "/login") return <AuthPage/>;
+    if (path === "/create-account") return <AuthPage kind="signup"/>;
     if (path === "/forgot-password") return <AuthPage kind="forgot"/>;
     if (path === "/reset-password") return <AuthPage kind="reset"/>;
     if (path.includes("invitation")) return <AuthPage kind="invite"/>;
     if (path.includes("public/campaign")) return <AuthPage kind="apply"/>;
-    if (path.includes("application-confirmation")) return <AuthPage kind="thanks"/>;
+    if (path.includes("application-confirmation") && !path.startsWith("/candidate/")) return <AuthPage kind="thanks"/>;
     if (path.includes("access-review")) return <AuthPage kind="access"/>;
     if (path.includes("workspace-unavailable")) return <AuthPage kind="unavailable"/>;
     if (path.startsWith("/candidate")) {
       let page: React.ReactNode = <CandidateDashboard/>;
       if (path.includes("/jobs")) page = <JobsPage/>;
+      else if (path.includes("/application-confirmation")) page = <ApplicationConfirmationPage/>;
       else if (path.includes("/applications")) page = <ApplicationsPage/>;
       else if (path.includes("/settings/profile")) page = <ProfilePage/>;
       else if (path.includes("/subscription")) page = <BillingPage/>;
