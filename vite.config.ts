@@ -6,17 +6,17 @@ import path from 'node:path'
 import siteConfiguration from './.figma/make/site.json'
 
 
-// Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
+  // .figma/make/deploy-preview passes `--mode development` for cached-preview builds.
   const emitSourcemaps = mode === 'development'
-
-  const publicBase =
-    process.env.FIGMA_PUBLIC_URL
-      ? `${process.env.FIGMA_PUBLIC_URL.replace(/\/$/, '')}/`
-      : '/Figma-UIUX-Recruitflow/'
+  const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1]
+  const githubPagesBase =
+    process.env.GITHUB_ACTIONS === 'true' && repositoryName && !repositoryName.endsWith('.github.io')
+      ? `/${repositoryName}/`
+      : '/'
 
   return {
-    base: publicBase,
+    base: process.env.FIGMA_PUBLIC_URL ? `${process.env.FIGMA_PUBLIC_URL}/` : githubPagesBase,
     build: {
       sourcemap: emitSourcemaps ? 'inline' : false,
       minify: !emitSourcemaps,
