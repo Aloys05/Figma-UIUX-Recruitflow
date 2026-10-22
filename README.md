@@ -114,3 +114,20 @@ location.reload();
 The navigation badge, summary ring, candidate sidebar, and candidate overview banner use the same displayed value. When integrating with a real saved profile-readiness value later, connect it to `getDisplayedProfileReadiness()` in `src/App.tsx`. There were no changes to route names, existing field labels, input behavior, user actions, mock campaigns, job/application data, or sidebar structure.
 
 **Modified files in this finishing pass:** `src/App.tsx`, `src/premium.css`, and this `README.md` only. All other files and assets are copied unchanged from the previous redesign ZIP.
+
+### Demo persistence without a database
+
+The deployed frontend uses browser `localStorage` for demonstration data. Submitted candidate applications are stored under `recruitflow.demoApplications`, so they remain available after refreshes and browser restarts on the same browser and device. Recruiter candidate views read the same entries, allowing the complete application and review flow to be demonstrated without a backend.
+
+This is intentionally local to the browser: data is not shared between users, browsers, or devices, and uploaded files are represented by their filename only. A real deployment should replace these storage helpers with authenticated API requests and server-side file storage.
+
+To reset demo applications from the browser console:
+
+```js
+localStorage.removeItem("recruitflow.demoApplications");
+location.reload();
+```
+
+Generated campaign links include the Vite deployment base path, so the public application URL works correctly for both the local root URL and the GitHub Pages project URL.
+
+Recruiter demo publishing is also stored in `localStorage` under `recruitflow.demoCampaign`. Use the campaign editor's **Publish campaign** button to publish the campaign and activate its candidate URL. Before publishing, the public URL shows an unavailable state; after publishing, candidates can complete the application and the submission appears in the recruiter candidate inbox.

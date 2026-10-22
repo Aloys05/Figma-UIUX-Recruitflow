@@ -62,8 +62,8 @@ function Avatar({ initials, color = "blue", size = "md" }: { initials: string; c
   return <span className={`avatar avatar-${color} avatar-${size}`}>{initials}</span>;
 }
 
-function Field({ label, placeholder, icon, type = "text", helper, required = false, minLength, onChange }: { label: string; placeholder?: string; icon?: IconName; type?: string; helper?: string; required?: boolean; minLength?: number; onChange?: React.ChangeEventHandler<HTMLInputElement> }) {
-  return <label className="field"><span className="field-label">{label}</span><span className="input-wrap">{icon && <Icon name={icon} size={17}/>}<input type={type} placeholder={placeholder} required={required} minLength={minLength} onChange={onChange}/>{type === "password" && <Icon name="eye" size={17}/>}</span>{helper && <span className="field-helper">{helper}</span>}</label>;
+function Field({ label, placeholder, icon, type = "text", helper, required = false, minLength, value, onChange }: { label: string; placeholder?: string; icon?: IconName; type?: string; helper?: string; required?: boolean; minLength?: number; value?: string; onChange?: React.ChangeEventHandler<HTMLInputElement> }) {
+  return <label className="field"><span className="field-label">{label}</span><span className="input-wrap">{icon && <Icon name={icon} size={17}/>}<input type={type} placeholder={placeholder} required={required} minLength={minLength} value={value} onChange={onChange}/>{type === "password" && <Icon name="eye" size={17}/>}</span>{helper && <span className="field-helper">{helper}</span>}</label>;
 }
 
 const recruiterNav = [
@@ -80,8 +80,21 @@ const candidateNav = [
 ];
 
 function go(path: string) {
-  window.history.pushState({}, "", path);
+  const basePath = import.meta.env.BASE_URL.endsWith("/") ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
+  const route = path.replace(/^\/+/, "");
+  window.history.pushState({}, "", `${basePath}${route}`);
   window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+function getAppPath() {
+  const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+  const path = window.location.pathname;
+  return basePath && basePath !== "/" && path.startsWith(basePath) ? path.slice(basePath.length) || "/" : path;
+}
+
+function getPublicCampaignUrl(campaignId = "1") {
+  const basePath = import.meta.env.BASE_URL.endsWith("/") ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
+  return `${window.location.origin}${basePath}public/campaign/${campaignId}`;
 }
 
 function Logo() {
@@ -192,6 +205,59 @@ const campaigns = [
   ["Finance Operations Analyst", "Finance", "Archived", "54", "10 Jan 2025", "gray"],
 ];
 
+type DemoCampaign = {
+  id: string;
+  title: string;
+  department: string;
+  location: string;
+  workArrangement: string;
+  summary: string;
+  employmentType: string;
+  experienceLevel: string;
+  roleDescription: string;
+  published: boolean;
+  publishedAt: string | null;
+  formBlocks?: FormBlock[];
+};
+
+const campaignStorageKey = "recruitflow.demoCampaign";
+const defaultDemoCampaign: DemoCampaign = {
+  id: "1",
+  title: "Senior Product Designer",
+  department: "Design",
+  location: "Cape Town",
+  workArrangement: "Hybrid",
+  summary: "Help us shape clear, useful experiences for thousands of growing teams.",
+  employmentType: "Full-time",
+  experienceLevel: "Senior",
+  roleDescription: "",
+  published: false,
+  publishedAt: null,
+};
+
+function readDemoCampaign(): DemoCampaign {
+  try {
+    const saved = window.localStorage.getItem(campaignStorageKey);
+    if (!saved) return defaultDemoCampaign;
+    const parsed: unknown = JSON.parse(saved);
+    if (typeof parsed !== "object" || parsed === null) throw new Error("Saved campaign data is invalid.");
+    return { ...defaultDemoCampaign, ...(parsed as Partial<DemoCampaign>) };
+  } catch (error) {
+    console.error("Could not load the demo campaign from browser storage.", error);
+    return defaultDemoCampaign;
+  }
+}
+
+function saveDemoCampaign(campaign: DemoCampaign) {
+  try {
+    window.localStorage.setItem(campaignStorageKey, JSON.stringify(campaign));
+    return true;
+  } catch (error) {
+    console.error("Could not save the demo campaign to browser storage.", error);
+    return false;
+  }
+}
+
 function Toolbar({ placeholder = "Search by name or email…" }: { placeholder?: string }) {
   return <div className="toolbar"><label className="search"><Icon name="search"/><input aria-label="Search" placeholder={placeholder}/><kbd>⌘ K</kbd></label><Button variant="secondary" icon="filter">Filters</Button><Button variant="secondary" icon="calendar">Date</Button></div>;
 }
@@ -291,21 +357,33 @@ function CandidateReviewModal({ candidate, onClose, onStatusChange }: { candidat
 
 function CampaignEditor() {
   const [section, setSection] = useState("Campaign details");
-  const [roleDescription, setRoleDescription] = useState("");
+  const [campaign, setCampaign] = useState(readDemoCampaign);
+  const [publishError, setPublishError] = useState("");
   const sections = ["Campaign details", "Role description", "Application form"];
-  return <div><PageHeader eyebrow="Campaigns / New campaign" title="Create campaign" description="Set up the role, application form and publishing details." action={<><span className="save-status"><Icon name="check" size={15}/> All changes saved</span><Button variant="secondary">Preview</Button><Button>Publish campaign</Button></>}/>
+  const updateCampaign = (changes: Partial<DemoCampaign>) => setCampaign(current => ({ ...current, ...changes }));
+  const publish = () => {
+    const next = { ...readDemoCampaign(), ...campaign, published: true, publishedAt: new Date().toISOString() };
+    if (!saveDemoCampaign(next)) {
+      setPublishError("The campaign could not be published in this browser. Please try again.");
+      return;
+    }
+    setCampaign(next);
+    setPublishError("");
+  };
+  return <div><PageHeader eyebrow="Campaigns / New campaign" title="Create campaign" description="Set up the role, application form and publishing details." action={<><span className="save-status"><Icon name="check" size={15}/> {campaign.published ? "Published" : "All changes saved"}</span><Button variant="secondary" onClick={() => go("/public/campaign/1")}>Preview</Button><Button onClick={publish}>{campaign.published ? "Campaign published" : "Publish campaign"}</Button></>}/>
+    {publishError && <p className="demo-storage-error" role="alert">{publishError}</p>}
     <nav className="campaign-stepper" aria-label="Campaign setup progress">{sections.map((s, i) => <button className={section === s ? "active" : ""} key={s} onClick={() => setSection(s)}><span>{i + 1}</span><strong>{s}</strong>{i < sections.length - 1 && <i aria-hidden="true"/>}</button>)}</nav>
     <div className={`editor-layout ${section === "Application form" ? "application-form-layout" : ""}`}>
       <section className={`form-page ${section === "Application form" ? "application-form-page-shell" : ""}`}><div className="form-heading"><span className="step-icon"><Icon name="briefcase"/></span><div><h2>{section}</h2><p>{section === "Campaign details" ? "Start with the essential information candidates need." : "Configure this section of your campaign."}</p></div></div>
         {section === "Campaign details" ? <>
-          <div className="form-grid"><Field label="Campaign title" placeholder="e.g. Senior Product Designer"/><Field label="Department" placeholder="Select a department"/><Field label="Location" icon="location" placeholder="e.g. Cape Town"/><Field label="Work arrangement" placeholder="Select arrangement"/></div>
-          <label className="field field-full"><span className="field-label">Short summary</span><textarea placeholder="Share a concise overview of this opportunity…"/><span className="field-helper">Help candidates quickly understand the role. 0 / 240</span></label>
+          <div className="form-grid"><Field label="Campaign title" placeholder="e.g. Senior Product Designer" value={campaign.title} onChange={event => updateCampaign({ title: event.target.value })}/><Field label="Department" placeholder="Select a department" value={campaign.department} onChange={event => updateCampaign({ department: event.target.value })}/><Field label="Location" icon="location" placeholder="e.g. Cape Town" value={campaign.location} onChange={event => updateCampaign({ location: event.target.value })}/><Field label="Work arrangement" placeholder="Select arrangement" value={campaign.workArrangement} onChange={event => updateCampaign({ workArrangement: event.target.value })}/></div>
+          <label className="field field-full"><span className="field-label">Short summary</span><textarea placeholder="Share a concise overview of this opportunity…" value={campaign.summary} onChange={event => updateCampaign({ summary: event.target.value })}/><span className="field-helper">Help candidates quickly understand the role. {campaign.summary.length} / 240</span></label>
           <div className="form-divider"/>
           <div className="subheading"><h3>Employment details</h3><p>Optional details help candidates understand the opportunity.</p></div>
-          <div className="form-grid"><Field label="Employment type" placeholder="Full-time"/><Field label="Experience level" placeholder="Senior"/></div>
+          <div className="form-grid"><Field label="Employment type" placeholder="Full-time" value={campaign.employmentType} onChange={event => updateCampaign({ employmentType: event.target.value })}/><Field label="Experience level" placeholder="Senior" value={campaign.experienceLevel} onChange={event => updateCampaign({ experienceLevel: event.target.value })}/></div>
           <div className="form-footer"><Button variant="secondary">Save draft</Button><Button onClick={() => setSection("Role description")}>Continue to role description <Icon name="arrow" size={15}/></Button></div>
         </> : section === "Role description" ? <>
-          <RichTextEditor value={roleDescription} onChange={setRoleDescription}/>
+          <RichTextEditor value={campaign.roleDescription} onChange={roleDescription => updateCampaign({ roleDescription })}/>
           <div className="form-footer"><Button variant="secondary" onClick={() => setSection("Campaign details")}>Back</Button><Button onClick={() => setSection("Application form")}>Continue to application form <Icon name="arrow" size={15}/></Button></div>
         </> : section === "Application form" ? <ApplicationFormBuilder onBack={() => setSection("Role description")}/> : <div className="empty-editor-step"><Icon name="check" size={24}/><h3>{section}</h3><p>This section is ready to configure next.</p></div>}
       </section></div>
@@ -367,7 +445,7 @@ function createFormBlock(type: FormBlockType, index: number): FormBlock {
 }
 
 function ApplicationFormBuilder({ onBack }: { onBack: () => void }) {
-  const [blocks, setBlocks] = useState<FormBlock[]>([createFormBlock("heading", 0), createFormBlock("shortAnswer", 1), createFormBlock("fileUpload", 2)]);
+  const [blocks, setBlocks] = useState<FormBlock[]>(() => readDemoCampaign().formBlocks || [createFormBlock("heading", 0), createFormBlock("shortAnswer", 1), createFormBlock("fileUpload", 2)]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<PreviewViewport>("desktop");
@@ -377,7 +455,11 @@ function ApplicationFormBuilder({ onBack }: { onBack: () => void }) {
   const [darkTheme, setDarkTheme] = useState(false);
   const [copied, setCopied] = useState(false);
   const selectedBlock = blocks.find(block => block.id === selectedId);
-  const formUrl = `${window.location.origin}/public/campaign/1`;
+  const formUrl = getPublicCampaignUrl();
+  useEffect(() => {
+    const campaign = readDemoCampaign();
+    saveDemoCampaign({ ...campaign, formBlocks: blocks });
+  }, [blocks]);
 
   const addBlock = (type: FormBlockType) => {
     const next = createFormBlock(type, blocks.length);
@@ -658,19 +740,13 @@ function JobCard({ job, selected = false, onClick, onApply, applied = false }: {
 
 function JobsPage() {
   const [selected, setSelected] = useState(0);
-  const [applicationJob, setApplicationJob] = useState<typeof jobs[0] | null>(null);
-  const { applications, error, saveApplication } = useDemoApplications();
+  const { applications, error } = useDemoApplications();
   const appliedJobTitles = new Set(applications.map(application => application.jobTitle));
   return <div><PageHeader eyebrow="Opportunities" title="Find your next role" description="Explore opportunities matched to your skills and preferences."/>
     <div className="job-search-bar"><label className="search"><Icon name="search"/><input placeholder="Job title, skill or company"/></label><label className="search location-search"><Icon name="location"/><input placeholder="Location"/></label><Button>Search jobs</Button></div>
     <div className="filter-row"><Button variant="secondary" icon="filter">All filters</Button>{["Remote", "Hybrid", "Design", "Full-time"].map(f => <button className="filter-pill" key={f}>{f}<Icon name="close" size={13}/></button>)}<span className="results-count">48 opportunities</span></div>
     {error && <p className="demo-storage-error" role="alert">{error}</p>}
-    <div className="jobs-layout"><div className="results-list">{jobs.map((j, i) => <JobCard job={j} key={j.title} selected={selected === i} applied={appliedJobTitles.has(j.title)} onClick={() => setSelected(i)} onApply={() => setApplicationJob(j)}/>)}</div><aside className="job-detail"><div className="job-detail-photo" key={jobs[selected].image}><img src={jobs[selected].image} alt="" /></div><div className="detail-header"><span className={`company-logo logo-${jobs[selected].tone}`}>{jobs[selected].initials}</span><button className="icon-btn"><Icon name="bookmark"/></button></div><h2>{jobs[selected].title}</h2><p className="company">{jobs[selected].company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{jobs[selected].location}</span><span><Icon name="briefcase" size={14}/>{jobs[selected].mode}</span></div><div className="match-banner"><Icon name="sparkles"/><span><strong>{jobs[selected].match}% profile match</strong><small>Your skills align strongly with this role.</small></span></div><Button className="full" disabled={appliedJobTitles.has(jobs[selected].title)} variant={appliedJobTitles.has(jobs[selected].title) ? "secondary" : "primary"} onClick={() => setApplicationJob(jobs[selected])}>{appliedJobTitles.has(jobs[selected].title) ? "Application sent" : "Apply now"}</Button><div className="detail-copy"><h3>About the role</h3><p>Join a collaborative product team shaping thoughtful digital experiences. You’ll partner closely with product, engineering and research to solve meaningful customer problems.</p><h3>What you’ll bring</h3><ul><li>5+ years of product design experience</li><li>Strong portfolio of end-to-end product work</li><li>Experience with accessible design systems</li></ul></div></aside></div>
-    {applicationJob && <ApplicationDialog job={applicationJob} onClose={() => setApplicationJob(null)} onSubmit={application => {
-      if (!saveApplication(application)) return false;
-      go("/candidate/application-confirmation");
-      return true;
-    }}/>}
+    <div className="jobs-layout"><div className="results-list">{jobs.map((j, i) => <JobCard job={j} key={j.title} selected={selected === i} applied={appliedJobTitles.has(j.title)} onClick={() => setSelected(i)} onApply={() => go("/public/campaign/1")}/>)}</div><aside className="job-detail"><div className="job-detail-photo" key={jobs[selected].image}><img src={jobs[selected].image} alt="" /></div><div className="detail-header"><span className={`company-logo logo-${jobs[selected].tone}`}>{jobs[selected].initials}</span><button className="icon-btn"><Icon name="bookmark"/></button></div><h2>{jobs[selected].title}</h2><p className="company">{jobs[selected].company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{jobs[selected].location}</span><span><Icon name="briefcase" size={14}/>{jobs[selected].mode}</span></div><div className="match-banner"><Icon name="sparkles"/><span><strong>{jobs[selected].match}% profile match</strong><small>Your skills align strongly with this role.</small></span></div><Button className="full" disabled={appliedJobTitles.has(jobs[selected].title)} variant={appliedJobTitles.has(jobs[selected].title) ? "secondary" : "primary"} onClick={() => go("/public/campaign/1")}>{appliedJobTitles.has(jobs[selected].title) ? "Application sent" : "Apply now"}</Button><div className="detail-copy"><h3>About the role</h3><p>Join a collaborative product team shaping thoughtful digital experiences. You’ll partner closely with product, engineering and research to solve meaningful customer problems.</p><h3>What you’ll bring</h3><ul><li>5+ years of product design experience</li><li>Strong portfolio of end-to-end product work</li><li>Experience with accessible design systems</li></ul></div></aside></div>
   </div>;
 }
 
@@ -816,13 +892,65 @@ function AuthPage({ kind = "login" }: { kind?: "login" | "signup" | "forgot" | "
   </div></main></div>;
 }
 
+function CandidateFormBlock({ block, onCoverLetterChange, onFileChange }: { block: FormBlock; onCoverLetterChange: (value: string) => void; onFileChange: (file: File | null) => void }) {
+  const label = <span className="field-label">{block.label}{block.isRequired && <span aria-hidden="true"> *</span>}</span>;
+  if (block.type === "divider") return <div className="form-divider"/>;
+  if (block.type === "heading") return <div className="subheading"><h3>{block.label}</h3></div>;
+  if (block.type === "fileUpload") return <label className="file-field">{label}<span className="file-input"><Icon name="upload" size={17}/><input type="file" accept={block.metadata.acceptedTypes || ".pdf,.doc,.docx"} required={block.isRequired} onChange={event => onFileChange(event.target.files?.[0] || null)}/><span>{block.placeholder}</span></span>{block.metadata.helpText && <span className="field-helper">{block.metadata.helpText}</span>}</label>;
+  if (block.type === "dropdown") return <label className="field">{label}<select className="review-select" required={block.isRequired} defaultValue=""><option value="" disabled>{block.placeholder}</option>{block.options.map(option => <option key={option}>{option}</option>)}</select>{block.metadata.helpText && <span className="field-helper">{block.metadata.helpText}</span>}</label>;
+  if (block.type === "multipleChoice") return <fieldset className="field"><legend>{label}</legend>{block.options.map(option => <label key={option}><input type="checkbox"/>{option}</label>)}</fieldset>;
+  if (block.type === "datePicker") return <label className="field">{label}<input className="setting-input" type="date" required={block.isRequired}/>{block.metadata.helpText && <span className="field-helper">{block.metadata.helpText}</span>}</label>;
+  return <label className="field">{label}<textarea required={block.isRequired} maxLength={block.metadata.maxLength} placeholder={block.placeholder} onChange={block.type === "richText" ? event => onCoverLetterChange(event.target.value) : undefined}/>{block.metadata.helpText && <span className="field-helper">{block.metadata.helpText}</span>}</label>;
+}
+
+function PublicConfiguredApplication({ campaign, blocks }: { campaign: DemoCampaign; blocks: FormBlock[] }) {
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [coverLetter, setCoverLetter] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const { saveApplication } = useDemoApplications();
+  const fileBlock = blocks.find(block => block.type === "fileUpload");
+  const coverBlock = blocks.find(block => block.type === "richText");
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (fileBlock?.isRequired && !cvFile) { setSubmitError(`Please complete "${fileBlock.label}" before submitting.`); return; }
+    if (coverBlock?.isRequired && !coverLetter.trim()) { setSubmitError(`Please complete "${coverBlock.label}" before submitting.`); return; }
+    if (!saveApplication({ id: `${Date.now()}`, jobTitle: campaign.title, company: "Orbit Systems", location: campaign.location, match: 92, initials: "OS", tone: "blue", submittedAt: new Date().toISOString(), status: "In review", cvFileName: cvFile?.name || "Not provided", coverLetter: coverLetter.trim() || "Not provided" })) {
+      setSubmitError("We couldn’t save your application in this browser. Please try again.");
+      return;
+    }
+    go("/candidate/application-confirmation");
+  };
+  return <div className="application-public"><header className="application-header"><div className="employer-brand"><span className="company-logo logo-blue">OS</span><span><strong>Orbit Systems</strong><small>Powered by RecruitFlow</small></span></div><span className="secure"><Icon name="lock" size={14}/> Secure application</span></header><main className="application-form-page"><div className="application-cover" aria-hidden="true"><img src={asset("assets/workplaces/office-3.jpg")} alt="" /><div className="application-cover-overlay"><img src={asset("assets/recruitflow-logo.png")} alt="" /></div></div><div className="role-intro"><Badge tone="success">Applications open</Badge><h1>{campaign.title}</h1><div className="job-meta"><span><Icon name="location" size={15}/>{campaign.location}</span><span><Icon name="briefcase" size={15}/>{campaign.workArrangement} · {campaign.employmentType}</span></div><p>{campaign.summary}</p></div><div className="application-columns"><aside><h2>Your application</h2><div className="current"><span>1</span>Application form</div><p>Complete the fields below and submit your application to Orbit Systems.</p></aside><section className="form-page"><form onSubmit={submit}><div className="form-heading"><div><h2>Application form</h2><p>Share your experience and details with the hiring team.</p></div></div>{blocks.map(block => <CandidateFormBlock key={block.id} block={block} onCoverLetterChange={setCoverLetter} onFileChange={setCvFile}/>)}{submitError && <p className="demo-storage-error" role="alert">{submitError}</p>}<div className="form-footer"><span>{blocks.filter(block => block.type !== "heading" && block.type !== "divider").length} fields</span><Button type="submit">Submit application</Button></div></form></section></div></main></div>;
+}
+
 function PublicApplication() {
-  return <div className="application-public"><header className="application-header"><div className="employer-brand"><span className="company-logo logo-blue">OS</span><span><strong>Orbit Systems</strong><small>Powered by RecruitFlow</small></span></div><span className="secure"><Icon name="lock" size={14}/> Secure application</span></header><main className="application-form-page"><div className="application-cover" aria-hidden="true"><img src={asset("assets/workplaces/office-3.jpg")} alt="" /><div className="application-cover-overlay"><img src={asset("assets/recruitflow-logo.png")} alt="" /></div></div><div className="role-intro"><Badge tone="success">Applications open</Badge><h1>Senior Product Designer</h1><div className="job-meta"><span><Icon name="location" size={15}/>Cape Town</span><span><Icon name="briefcase" size={15}/>Hybrid · Full-time</span></div><p>Help us shape clear, useful experiences for thousands of growing teams.</p></div><div className="application-columns"><aside><h2>Your application</h2>{["Personal details", "Experience", "Documents", "Additional questions"].map((x, i) => <div className={i === 0 ? "current" : ""} key={x}><span>{i + 1}</span>{x}</div>)}</aside><section className="form-page"><div className="form-heading"><div><h2>Personal details</h2><p>Tell the hiring team how they can reach you.</p></div></div><div className="form-grid"><Field label="First name" placeholder="Your first name"/><Field label="Last name" placeholder="Your last name"/><Field label="Email address" icon="mail" placeholder="you@example.com"/><Field label="Phone number" placeholder="+27"/></div><Field label="Current location" icon="location" placeholder="City, country"/><div className="form-footer"><span>Step 1 of 4</span><Button>Continue <Icon name="arrow" size={15}/></Button></div></section></div></main></div>;
+  const [step, setStep] = useState(0);
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [coverLetter, setCoverLetter] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const campaign = readDemoCampaign();
+  const { saveApplication } = useDemoApplications();
+  const steps = ["Personal details", "Experience", "Documents", "Additional questions"];
+  const next = () => { setSubmitError(""); setStep(current => Math.min(current + 1, steps.length - 1)); };
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (step < steps.length - 1) { next(); return; }
+    if (!cvFile) { setSubmitError("Please attach your CV before submitting."); return; }
+    if (!coverLetter.trim()) { setSubmitError("Please add a short cover letter before submitting."); return; }
+    if (!saveApplication({ id: `${Date.now()}`, jobTitle: campaign.title, company: "Orbit Systems", location: campaign.location, match: 92, initials: "OS", tone: "blue", submittedAt: new Date().toISOString(), status: "In review", cvFileName: cvFile.name, coverLetter: coverLetter.trim() })) {
+      setSubmitError("We couldn’t save your application in this browser. Please try again.");
+      return;
+    }
+    go("/candidate/application-confirmation");
+  };
+  if (!campaign.published) return <div className="public-page"><header className="public-header"><Logo/><Button variant="ghost" onClick={() => go("/login")}>Sign in</Button></header><main className="state-page"><div className="state-icon state-unavailable"><Icon name="clock" size={30}/></div><h1>Applications are not open yet</h1><p>This campaign is still being prepared by the hiring team. Please check back after it has been published.</p><Button onClick={() => go("/candidate/jobs")}>Back to opportunities</Button></main></div>;
+  if (campaign.formBlocks?.length) return <PublicConfiguredApplication campaign={campaign} blocks={campaign.formBlocks}/>;
+  return <div className="application-public"><header className="application-header"><div className="employer-brand"><span className="company-logo logo-blue">OS</span><span><strong>Orbit Systems</strong><small>Powered by RecruitFlow</small></span></div><span className="secure"><Icon name="lock" size={14}/> Secure application</span></header><main className="application-form-page"><div className="application-cover" aria-hidden="true"><img src={asset("assets/workplaces/office-3.jpg")} alt="" /><div className="application-cover-overlay"><img src={asset("assets/recruitflow-logo.png")} alt="" /></div></div><div className="role-intro"><Badge tone="success">Applications open</Badge><h1>{campaign.title}</h1><div className="job-meta"><span><Icon name="location" size={15}/>{campaign.location}</span><span><Icon name="briefcase" size={15}/>{campaign.workArrangement} · {campaign.employmentType}</span></div><p>{campaign.summary}</p></div><div className="application-columns"><aside><h2>Your application</h2>{steps.map((x, i) => <div className={i === step ? "current" : i < step ? "complete" : ""} key={x}><span>{i < step ? <Icon name="check" size={13}/> : i + 1}</span>{x}</div>)}</aside><section className="form-page"><form onSubmit={submit}><div className="form-heading"><div><h2>{steps[step]}</h2><p>{step === 0 ? "Tell the hiring team how they can reach you." : step === 1 ? "Share the experience that makes you a strong fit." : step === 2 ? "Add the documents the hiring team will review." : "A final note helps us understand your motivation."}</p></div></div>{step === 0 && <><div className="form-grid"><Field label="First name" placeholder="Your first name" required/><Field label="Last name" placeholder="Your last name" required/><Field label="Email address" icon="mail" placeholder="you@example.com" type="email" required/><Field label="Phone number" placeholder="+27" required/></div><Field label="Current location" icon="location" placeholder="City, country" required/></>}{step === 1 && <><Field label="Portfolio URL" icon="external" placeholder="https://yourportfolio.com" required/><label className="field"><span className="field-label">Years of experience</span><select className="review-select" required><option value="">Select an option</option><option>1–2 years</option><option>3–5 years</option><option>5+ years</option></select></label><label className="field"><span className="field-label">What kind of work energises you?</span><textarea placeholder="Tell us about the products or problems you enjoy working on…" required/></label></>}{step === 2 && <label className="file-field"><span className="field-label">CV or resume <span aria-hidden="true">*</span></span><span className="file-input"><Icon name="upload" size={17}/><input type="file" accept=".pdf,.doc,.docx" required={!cvFile} onChange={event => { setCvFile(event.target.files?.[0] || null); setSubmitError(""); }}/><span>{cvFile?.name || "Choose a PDF or Word document"}</span></span><span className="field-helper">Demo mode saves the filename only; your file is not uploaded.</span></label>}{step === 3 && <><label className="field"><span className="field-label">Cover letter <span aria-hidden="true">*</span></span><textarea value={coverLetter} onChange={event => { setCoverLetter(event.target.value); setSubmitError(""); }} placeholder={`Tell Orbit Systems why you’re excited about this role…`} required/></label><label className="field"><span className="field-label">When could you start?</span><select className="review-select"><option>Immediately</option><option>Within one month</option><option>Within three months</option></select></label></>}{submitError && <p className="demo-storage-error" role="alert">{submitError}</p>}<div className="form-footer"><span>Step {step + 1} of {steps.length}</span><div>{step > 0 && <Button variant="secondary" onClick={() => { setSubmitError(""); setStep(current => current - 1); }}>Back</Button>}{step < steps.length - 1 ? <Button type="submit">Continue <Icon name="arrow" size={15}/></Button> : <Button type="submit">Submit application</Button>}</div></div></form></section></div></main></div>;
 }
 
 function App() {
-  const [path, setPath] = useState(window.location.pathname);
-  useEffect(() => { const handler = () => setPath(window.location.pathname); window.addEventListener("popstate", handler); return () => window.removeEventListener("popstate", handler); }, []);
+  const [path, setPath] = useState(getAppPath);
+  useEffect(() => { const handler = () => setPath(getAppPath()); window.addEventListener("popstate", handler); return () => window.removeEventListener("popstate", handler); }, []);
   const content = useMemo(() => {
     if (path === "/" || path === "/login") return <AuthPage/>;
     if (path === "/create-account") return <AuthPage kind="signup"/>;
