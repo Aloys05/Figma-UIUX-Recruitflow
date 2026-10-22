@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { CandidateProfile, loadCandidateProfile, storeCandidateProfile, calculateReadiness, profileChecks, profileSections, readinessRequirements, splitTags, useProfileReadiness, useSavedJobs, saveBrowserFile, loadBrowserFile, isSupportedCV, isSupportedPhoto } from "./candidate-demo";
 
 // Resolve bundled reference images correctly on localhost and subpath deployments.
 const asset = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
@@ -62,8 +63,8 @@ function Avatar({ initials, color = "blue", size = "md" }: { initials: string; c
   return <span className={`avatar avatar-${color} avatar-${size}`}>{initials}</span>;
 }
 
-function Field({ label, placeholder, icon, type = "text", helper, required = false, minLength, value, onChange }: { label: string; placeholder?: string; icon?: IconName; type?: string; helper?: string; required?: boolean; minLength?: number; value?: string; onChange?: React.ChangeEventHandler<HTMLInputElement> }) {
-  return <label className="field"><span className="field-label">{label}</span><span className="input-wrap">{icon && <Icon name={icon} size={17}/>}<input type={type} placeholder={placeholder} required={required} minLength={minLength} value={value} onChange={onChange}/>{type === "password" && <Icon name="eye" size={17}/>}</span>{helper && <span className="field-helper">{helper}</span>}</label>;
+function Field({ label, placeholder, icon, type = "text", helper, required = false, minLength, onChange }: { label: string; placeholder?: string; icon?: IconName; type?: string; helper?: string; required?: boolean; minLength?: number; onChange?: React.ChangeEventHandler<HTMLInputElement> }) {
+  return <label className="field"><span className="field-label">{label}</span><span className="input-wrap">{icon && <Icon name={icon} size={17}/>}<input type={type} placeholder={placeholder} required={required} minLength={minLength} onChange={onChange}/>{type === "password" && <Icon name="eye" size={17}/>}</span>{helper && <span className="field-helper">{helper}</span>}</label>;
 }
 
 const recruiterNav = [
@@ -80,21 +81,8 @@ const candidateNav = [
 ];
 
 function go(path: string) {
-  const basePath = import.meta.env.BASE_URL.endsWith("/") ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
-  const route = path.replace(/^\/+/, "");
-  window.history.pushState({}, "", `${basePath}${route}`);
+  window.history.pushState({}, "", path);
   window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
-function getAppPath() {
-  const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-  const path = window.location.pathname;
-  return basePath && basePath !== "/" && path.startsWith(basePath) ? path.slice(basePath.length) || "/" : path;
-}
-
-function getPublicCampaignUrl(campaignId = "1") {
-  const basePath = import.meta.env.BASE_URL.endsWith("/") ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
-  return `${window.location.origin}${basePath}public/campaign/${campaignId}`;
 }
 
 function Logo() {
@@ -102,7 +90,7 @@ function Logo() {
 }
 
 function AppShell({ children, mode, path }: { children: React.ReactNode; mode: "recruiter" | "candidate"; path: string }) {
-  const profileReadiness = getDisplayedProfileReadiness();
+  const profileReadiness = useProfileReadiness();
   const [mobileOpen, setMobileOpen] = useState(false);
   const nav = mode === "recruiter" ? recruiterNav : candidateNav;
   const current = (p: string) => p === `/${mode}` ? path === p : path.startsWith(p);
@@ -117,6 +105,7 @@ function AppShell({ children, mode, path }: { children: React.ReactNode; mode: "
       <nav className="main-nav" aria-label="Primary">
         <span className="nav-label">Workspace</span>
         {nav.map(item => <button key={item.path} className={`nav-item ${current(item.path) ? "active" : ""}`} onClick={() => { go(item.path); setMobileOpen(false); }}><Icon name={item.icon}/><span>{item.label}</span>{item.label === "My profile" && <span className="nav-progress">{profileReadiness}%</span>}</button>)}
+        {mode === "candidate" && <button className={`nav-item saved-jobs-nav ${path === "/candidate/saved-jobs" ? "active" : ""}`} onClick={() => { go("/candidate/saved-jobs"); setMobileOpen(false); }}><Icon name="bookmark"/><span>Saved jobs</span></button>}
         {mode === "recruiter" && <div className="nav-settings">
           <button className={`nav-item ${path.includes("/settings/") ? "active" : ""}`} onClick={() => go("/recruiter/settings/team")}><Icon name="settings"/><span>Settings</span><Icon name="chevron" size={14}/></button>
           {(path.includes("/settings/") || true) && <div className="subnav">
@@ -128,7 +117,7 @@ function AppShell({ children, mode, path }: { children: React.ReactNode; mode: "
       {mode === "candidate" && <div className="readiness-card">
         <div className="readiness-head"><span>Profile readiness</span><strong>{profileReadiness}%</strong></div>
         <div className="progress"><span style={{ width: `${profileReadiness}%` }}/></div>
-        <p>{profileReadiness === 100 ? "Your profile is ready to be matched." : "Add work experience to improve your matches."}</p>
+        <p>{profileReadiness === 100 ? "Your profile is ready to be matched." : "Complete your remaining profile sections to improve matches."}</p>
         <button onClick={() => go("/candidate/settings/profile-readiness")}>Complete profile <Icon name="arrow" size={14}/></button>
       </div>}
       <div className="sidebar-footer"><div className="account-row"><Avatar initials={mode === "recruiter" ? "SO" : "AM"} color={mode === "recruiter" ? "green" : "purple"} size="sm"/><span className="account-details"><strong>{mode === "recruiter" ? "Sophie Okafor" : "Alex Morgan"}</strong><small>{mode === "recruiter" ? "Admin" : "alex@example.com"}</small></span><button className="account-signout" onClick={logOut} aria-label="Sign out" title="Sign out"><Icon name="logOut" size={17}/></button></div></div>
@@ -204,59 +193,6 @@ const campaigns = [
   ["Growth Marketing Manager", "Marketing", "Draft", "—", "Not published", "amber"],
   ["Finance Operations Analyst", "Finance", "Archived", "54", "10 Jan 2025", "gray"],
 ];
-
-type DemoCampaign = {
-  id: string;
-  title: string;
-  department: string;
-  location: string;
-  workArrangement: string;
-  summary: string;
-  employmentType: string;
-  experienceLevel: string;
-  roleDescription: string;
-  published: boolean;
-  publishedAt: string | null;
-  formBlocks?: FormBlock[];
-};
-
-const campaignStorageKey = "recruitflow.demoCampaign";
-const defaultDemoCampaign: DemoCampaign = {
-  id: "1",
-  title: "Senior Product Designer",
-  department: "Design",
-  location: "Cape Town",
-  workArrangement: "Hybrid",
-  summary: "Help us shape clear, useful experiences for thousands of growing teams.",
-  employmentType: "Full-time",
-  experienceLevel: "Senior",
-  roleDescription: "",
-  published: false,
-  publishedAt: null,
-};
-
-function readDemoCampaign(): DemoCampaign {
-  try {
-    const saved = window.localStorage.getItem(campaignStorageKey);
-    if (!saved) return defaultDemoCampaign;
-    const parsed: unknown = JSON.parse(saved);
-    if (typeof parsed !== "object" || parsed === null) throw new Error("Saved campaign data is invalid.");
-    return { ...defaultDemoCampaign, ...(parsed as Partial<DemoCampaign>) };
-  } catch (error) {
-    console.error("Could not load the demo campaign from browser storage.", error);
-    return defaultDemoCampaign;
-  }
-}
-
-function saveDemoCampaign(campaign: DemoCampaign) {
-  try {
-    window.localStorage.setItem(campaignStorageKey, JSON.stringify(campaign));
-    return true;
-  } catch (error) {
-    console.error("Could not save the demo campaign to browser storage.", error);
-    return false;
-  }
-}
 
 function Toolbar({ placeholder = "Search by name or email…" }: { placeholder?: string }) {
   return <div className="toolbar"><label className="search"><Icon name="search"/><input aria-label="Search" placeholder={placeholder}/><kbd>⌘ K</kbd></label><Button variant="secondary" icon="filter">Filters</Button><Button variant="secondary" icon="calendar">Date</Button></div>;
@@ -357,33 +293,21 @@ function CandidateReviewModal({ candidate, onClose, onStatusChange }: { candidat
 
 function CampaignEditor() {
   const [section, setSection] = useState("Campaign details");
-  const [campaign, setCampaign] = useState(readDemoCampaign);
-  const [publishError, setPublishError] = useState("");
+  const [roleDescription, setRoleDescription] = useState("");
   const sections = ["Campaign details", "Role description", "Application form"];
-  const updateCampaign = (changes: Partial<DemoCampaign>) => setCampaign(current => ({ ...current, ...changes }));
-  const publish = () => {
-    const next = { ...readDemoCampaign(), ...campaign, published: true, publishedAt: new Date().toISOString() };
-    if (!saveDemoCampaign(next)) {
-      setPublishError("The campaign could not be published in this browser. Please try again.");
-      return;
-    }
-    setCampaign(next);
-    setPublishError("");
-  };
-  return <div><PageHeader eyebrow="Campaigns / New campaign" title="Create campaign" description="Set up the role, application form and publishing details." action={<><span className="save-status"><Icon name="check" size={15}/> {campaign.published ? "Published" : "All changes saved"}</span><Button variant="secondary" onClick={() => go("/public/campaign/1")}>Preview</Button><Button onClick={publish}>{campaign.published ? "Campaign published" : "Publish campaign"}</Button></>}/>
-    {publishError && <p className="demo-storage-error" role="alert">{publishError}</p>}
+  return <div><PageHeader eyebrow="Campaigns / New campaign" title="Create campaign" description="Set up the role, application form and publishing details." action={<><span className="save-status"><Icon name="check" size={15}/> All changes saved</span><Button variant="secondary">Preview</Button><Button>Publish campaign</Button></>}/>
     <nav className="campaign-stepper" aria-label="Campaign setup progress">{sections.map((s, i) => <button className={section === s ? "active" : ""} key={s} onClick={() => setSection(s)}><span>{i + 1}</span><strong>{s}</strong>{i < sections.length - 1 && <i aria-hidden="true"/>}</button>)}</nav>
     <div className={`editor-layout ${section === "Application form" ? "application-form-layout" : ""}`}>
       <section className={`form-page ${section === "Application form" ? "application-form-page-shell" : ""}`}><div className="form-heading"><span className="step-icon"><Icon name="briefcase"/></span><div><h2>{section}</h2><p>{section === "Campaign details" ? "Start with the essential information candidates need." : "Configure this section of your campaign."}</p></div></div>
         {section === "Campaign details" ? <>
-          <div className="form-grid"><Field label="Campaign title" placeholder="e.g. Senior Product Designer" value={campaign.title} onChange={event => updateCampaign({ title: event.target.value })}/><Field label="Department" placeholder="Select a department" value={campaign.department} onChange={event => updateCampaign({ department: event.target.value })}/><Field label="Location" icon="location" placeholder="e.g. Cape Town" value={campaign.location} onChange={event => updateCampaign({ location: event.target.value })}/><Field label="Work arrangement" placeholder="Select arrangement" value={campaign.workArrangement} onChange={event => updateCampaign({ workArrangement: event.target.value })}/></div>
-          <label className="field field-full"><span className="field-label">Short summary</span><textarea placeholder="Share a concise overview of this opportunity…" value={campaign.summary} onChange={event => updateCampaign({ summary: event.target.value })}/><span className="field-helper">Help candidates quickly understand the role. {campaign.summary.length} / 240</span></label>
+          <div className="form-grid"><Field label="Campaign title" placeholder="e.g. Senior Product Designer"/><Field label="Department" placeholder="Select a department"/><Field label="Location" icon="location" placeholder="e.g. Cape Town"/><Field label="Work arrangement" placeholder="Select arrangement"/></div>
+          <label className="field field-full"><span className="field-label">Short summary</span><textarea placeholder="Share a concise overview of this opportunity…"/><span className="field-helper">Help candidates quickly understand the role. 0 / 240</span></label>
           <div className="form-divider"/>
           <div className="subheading"><h3>Employment details</h3><p>Optional details help candidates understand the opportunity.</p></div>
-          <div className="form-grid"><Field label="Employment type" placeholder="Full-time" value={campaign.employmentType} onChange={event => updateCampaign({ employmentType: event.target.value })}/><Field label="Experience level" placeholder="Senior" value={campaign.experienceLevel} onChange={event => updateCampaign({ experienceLevel: event.target.value })}/></div>
+          <div className="form-grid"><Field label="Employment type" placeholder="Full-time"/><Field label="Experience level" placeholder="Senior"/></div>
           <div className="form-footer"><Button variant="secondary">Save draft</Button><Button onClick={() => setSection("Role description")}>Continue to role description <Icon name="arrow" size={15}/></Button></div>
         </> : section === "Role description" ? <>
-          <RichTextEditor value={campaign.roleDescription} onChange={roleDescription => updateCampaign({ roleDescription })}/>
+          <RichTextEditor value={roleDescription} onChange={setRoleDescription}/>
           <div className="form-footer"><Button variant="secondary" onClick={() => setSection("Campaign details")}>Back</Button><Button onClick={() => setSection("Application form")}>Continue to application form <Icon name="arrow" size={15}/></Button></div>
         </> : section === "Application form" ? <ApplicationFormBuilder onBack={() => setSection("Role description")}/> : <div className="empty-editor-step"><Icon name="check" size={24}/><h3>{section}</h3><p>This section is ready to configure next.</p></div>}
       </section></div>
@@ -445,7 +369,7 @@ function createFormBlock(type: FormBlockType, index: number): FormBlock {
 }
 
 function ApplicationFormBuilder({ onBack }: { onBack: () => void }) {
-  const [blocks, setBlocks] = useState<FormBlock[]>(() => readDemoCampaign().formBlocks || [createFormBlock("heading", 0), createFormBlock("shortAnswer", 1), createFormBlock("fileUpload", 2)]);
+  const [blocks, setBlocks] = useState<FormBlock[]>([createFormBlock("heading", 0), createFormBlock("shortAnswer", 1), createFormBlock("fileUpload", 2)]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<PreviewViewport>("desktop");
@@ -455,11 +379,7 @@ function ApplicationFormBuilder({ onBack }: { onBack: () => void }) {
   const [darkTheme, setDarkTheme] = useState(false);
   const [copied, setCopied] = useState(false);
   const selectedBlock = blocks.find(block => block.id === selectedId);
-  const formUrl = getPublicCampaignUrl();
-  useEffect(() => {
-    const campaign = readDemoCampaign();
-    saveDemoCampaign({ ...campaign, formBlocks: blocks });
-  }, [blocks]);
+  const formUrl = `${window.location.origin}/public/campaign/1`;
 
   const addBlock = (type: FormBlockType) => {
     const next = createFormBlock(type, blocks.length);
@@ -693,20 +613,6 @@ function getApplicationProgress(status: DemoApplication["status"]) {
   };
 }
 
-// Visual-only readiness adapter: the original prototype has a 75% demo value.
-// A saved 100% value can be supplied by a profile persistence integration;
-// this patch does not change the existing Save or profile-edit behavior.
-function getDisplayedProfileReadiness(): number {
-  try {
-    const saved = window.localStorage.getItem("recruitflow.profileReadiness");
-    if (saved !== null && saved.trim() !== "") {
-      const percent = Number(saved);
-      if (Number.isFinite(percent)) return Math.min(100, Math.max(0, percent));
-    }
-  } catch { /* Private browsing may disable localStorage. */ }
-  return 75;
-}
-
 // Design reference: the blue photo banners in the provided candidate/recruiter screenshots.
 function WorkspaceShowcase({ audience }: { audience: "candidate" | "recruiter" }) {
   const candidate = audience === "candidate";
@@ -722,36 +628,80 @@ function WorkspaceShowcase({ audience }: { audience: "candidate" | "recruiter" }
 }
 
 function CandidateDashboard() {
-  const profileReadiness = getDisplayedProfileReadiness();
+  const profileReadiness = useProfileReadiness();
   const { applications } = useDemoApplications();
   const inReviewCount = applications.filter(application => application.status === "In review").length;
   const interviewCount = applications.filter(application => application.status === "Interview").length;
   return <div><PageHeader eyebrow="Tuesday, 12 March" title="Welcome back, Alex" description="You’re making progress. Here’s what to focus on next." action={<Button icon="search" onClick={() => go("/candidate/jobs")}>Find jobs</Button>}/>
-    {profileReadiness === 100 ? <WorkspaceShowcase audience="candidate"/> : <div className="candidate-hero"><div><span className="eyebrow">Your profile</span><h2>Stand out to the right employers</h2><p>Your profile is {profileReadiness}% ready. Add your recent work experience to unlock stronger job matches.</p><Button variant="secondary" onClick={() => go("/candidate/settings/profile-readiness")}>Complete your profile <Icon name="arrow" size={15}/></Button></div><div className="readiness-ring"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><circle className="ring-value" cx="40" cy="40" r="34" style={{ "--ring-fill": `${Math.round((profileReadiness / 100) * 214)} 214` } as React.CSSProperties}/></svg><span><strong>{profileReadiness}%</strong><small>ready</small></span></div></div>}
+    {profileReadiness === 100 ? <WorkspaceShowcase audience="candidate"/> : <div className="candidate-hero"><div><span className="eyebrow">Your profile</span><h2>Stand out to the right employers</h2><p>Your profile is {profileReadiness}% ready. Complete your remaining sections for stronger job matches.</p><Button variant="secondary" onClick={() => go("/candidate/settings/profile-readiness")}>Complete your profile <Icon name="arrow" size={15}/></Button></div><div className="readiness-ring"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><circle className="ring-value" cx="40" cy="40" r="34" style={{ "--ring-fill": `${Math.round((profileReadiness / 100) * 214)} 214` } as React.CSSProperties}/></svg><span><strong>{profileReadiness}%</strong><small>ready</small></span></div></div>}
     <div className="application-stats">{[["Applications", String(applications.length), "Your submitted applications"], ["In review", String(inReviewCount), "With hiring teams"], ["Interviews", String(interviewCount), "Ready for your next step"]].map((x, i) => <div key={x[0]}><span className={`metric-icon metric-${["blue", "amber", "green"][i]}`}><Icon name={["file", "clock", "calendar"][i] as IconName}/></span><span><small>{x[0]}</small><strong>{x[1]}</strong><p>{x[2]}</p></span></div>)}</div>
     <section className="recommended"><div className="section-header"><div><h2>Recommended for you</h2><p>Based on your skills and preferences</p></div><button className="text-btn" onClick={() => go("/candidate/jobs")}>Browse all jobs <Icon name="arrow" size={14}/></button></div><div className="job-grid">{jobs.slice(0, 3).map(j => <JobCard job={j} key={j.title}/>)}</div></section>
   </div>;
 }
 
+const jobToastEvent = "recruitflow:job-toast";
+function JobToastManager() {
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    let timer: number | undefined;
+    const notify = (event: Event) => {
+      setMessage((event as CustomEvent<string>).detail);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setMessage(""), 2600);
+    };
+    window.addEventListener(jobToastEvent, notify);
+    return () => { window.clearTimeout(timer); window.removeEventListener(jobToastEvent, notify); };
+  }, []);
+  return message ? <div className="job-save-toast" role="status" aria-live="polite"><Icon name="check" size={16}/>{message}</div> : null;
+}
+function SaveJobButton({ job, className = "" }: { job: typeof jobs[0]; className?: string }) {
+  const { savedJobs, toggle } = useSavedJobs();
+  const saved = savedJobs.includes(job.title);
+  return <button type="button" className={`icon-btn ${saved ? "saved" : ""} ${className}`} title={saved ? "Remove saved job" : "Save job"} aria-label={saved ? `Unsave ${job.title}` : `Save ${job.title}`} aria-pressed={saved} onClick={event => {
+    event.stopPropagation();
+    let message: string;
+    try { message = toggle(job.title) ? "Job saved" : "Job unsaved"; }
+    catch { message = "Couldn't save job in this browser"; }
+    window.dispatchEvent(new CustomEvent(jobToastEvent, { detail: message }));
+  }}><Icon name="bookmark"/></button>;
+}
+
 function JobCard({ job, selected = false, onClick, onApply, applied = false }: { job: typeof jobs[0]; selected?: boolean; onClick?: () => void; onApply?: () => void; applied?: boolean }) {
-  const [saved, setSaved] = useState(false);
-  return <article className={`job-card ${selected ? "selected" : ""}`} onClick={onClick}><div className="job-card-photo" aria-hidden="true"><img src={job.image} alt="" loading="lazy" /></div><div className="job-card-top"><span className={`company-logo logo-${job.tone}`}>{job.initials}</span><button className={`icon-btn ${saved ? "saved" : ""}`} onClick={e => { e.stopPropagation(); setSaved(!saved); }} aria-label="Save job"><Icon name="bookmark"/></button></div><h3>{job.title}</h3><p className="company">{job.company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{job.location}</span><span><Icon name="briefcase" size={14}/>{job.mode}</span></div><div className="job-footer"><span className="match"><Icon name="sparkles" size={14}/>{job.match}% match</span><small>{job.time}</small></div>{onApply && <button className={`btn ${applied ? "btn-secondary" : "btn-primary"} job-card-apply`} disabled={applied} onClick={event => { event.stopPropagation(); onApply(); }}><span>{applied ? "Application sent" : "Apply now"}</span></button>}</article>;
+  return <article className={`job-card ${selected ? "selected" : ""}`} onClick={onClick}><div className="job-card-photo" aria-hidden="true"><img src={job.image} alt="" loading="lazy" /></div><div className="job-card-top"><span className={`company-logo logo-${job.tone}`}>{job.initials}</span><SaveJobButton job={job}/></div><h3>{job.title}</h3><p className="company">{job.company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{job.location}</span><span><Icon name="briefcase" size={14}/>{job.mode}</span></div><div className="job-footer"><span className="match"><Icon name="sparkles" size={14}/>{job.match}% match</span><small>{job.time}</small></div>{onApply && <button className={`btn ${applied ? "btn-secondary" : "btn-primary"} job-card-apply`} disabled={applied} onClick={event => { event.stopPropagation(); onApply(); }}><span>{applied ? "Application sent" : "Apply now"}</span></button>}</article>;
+}
+
+function SavedJobsPage() {
+  const { savedJobs } = useSavedJobs();
+  const { applications } = useDemoApplications();
+  const saved = jobs.filter(job => savedJobs.includes(job.title));
+  return <div><PageHeader eyebrow="My profile" title="Saved jobs" description="Keep the opportunities you're interested in close at hand." action={<Button icon="search" onClick={() => go("/candidate/jobs")}>Explore jobs</Button>}/>
+    {saved.length ? <div className="job-grid saved-jobs-grid">{saved.map(job => <JobCard key={job.title} job={job} onApply={() => go("/candidate/jobs")} applied={applications.some(a => a.jobTitle === job.title)}/>)}</div> : <section className="saved-jobs-empty surface"><Icon name="bookmark" size={28}/><h2>No saved jobs yet</h2><p>Tap the bookmark on any job to keep it here for later.</p><Button onClick={() => go("/candidate/jobs")}>Find jobs</Button></section>}
+  </div>;
 }
 
 function JobsPage() {
   const [selected, setSelected] = useState(0);
-  const { applications, error } = useDemoApplications();
+  const [applicationJob, setApplicationJob] = useState<typeof jobs[0] | null>(null);
+  const { applications, error, saveApplication } = useDemoApplications();
   const appliedJobTitles = new Set(applications.map(application => application.jobTitle));
   return <div><PageHeader eyebrow="Opportunities" title="Find your next role" description="Explore opportunities matched to your skills and preferences."/>
     <div className="job-search-bar"><label className="search"><Icon name="search"/><input placeholder="Job title, skill or company"/></label><label className="search location-search"><Icon name="location"/><input placeholder="Location"/></label><Button>Search jobs</Button></div>
     <div className="filter-row"><Button variant="secondary" icon="filter">All filters</Button>{["Remote", "Hybrid", "Design", "Full-time"].map(f => <button className="filter-pill" key={f}>{f}<Icon name="close" size={13}/></button>)}<span className="results-count">48 opportunities</span></div>
     {error && <p className="demo-storage-error" role="alert">{error}</p>}
-    <div className="jobs-layout"><div className="results-list">{jobs.map((j, i) => <JobCard job={j} key={j.title} selected={selected === i} applied={appliedJobTitles.has(j.title)} onClick={() => setSelected(i)} onApply={() => go("/public/campaign/1")}/>)}</div><aside className="job-detail"><div className="job-detail-photo" key={jobs[selected].image}><img src={jobs[selected].image} alt="" /></div><div className="detail-header"><span className={`company-logo logo-${jobs[selected].tone}`}>{jobs[selected].initials}</span><button className="icon-btn"><Icon name="bookmark"/></button></div><h2>{jobs[selected].title}</h2><p className="company">{jobs[selected].company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{jobs[selected].location}</span><span><Icon name="briefcase" size={14}/>{jobs[selected].mode}</span></div><div className="match-banner"><Icon name="sparkles"/><span><strong>{jobs[selected].match}% profile match</strong><small>Your skills align strongly with this role.</small></span></div><Button className="full" disabled={appliedJobTitles.has(jobs[selected].title)} variant={appliedJobTitles.has(jobs[selected].title) ? "secondary" : "primary"} onClick={() => go("/public/campaign/1")}>{appliedJobTitles.has(jobs[selected].title) ? "Application sent" : "Apply now"}</Button><div className="detail-copy"><h3>About the role</h3><p>Join a collaborative product team shaping thoughtful digital experiences. You’ll partner closely with product, engineering and research to solve meaningful customer problems.</p><h3>What you’ll bring</h3><ul><li>5+ years of product design experience</li><li>Strong portfolio of end-to-end product work</li><li>Experience with accessible design systems</li></ul></div></aside></div>
+    <div className="jobs-layout"><div className="results-list">{jobs.map((j, i) => <JobCard job={j} key={j.title} selected={selected === i} applied={appliedJobTitles.has(j.title)} onClick={() => setSelected(i)} onApply={() => setApplicationJob(j)}/>)}</div><aside className="job-detail"><div className="job-detail-photo" key={jobs[selected].image}><img src={jobs[selected].image} alt="" /></div><div className="detail-header"><span className={`company-logo logo-${jobs[selected].tone}`}>{jobs[selected].initials}</span><SaveJobButton job={jobs[selected]}/></div><h2>{jobs[selected].title}</h2><p className="company">{jobs[selected].company}</p><div className="job-meta"><span><Icon name="location" size={14}/>{jobs[selected].location}</span><span><Icon name="briefcase" size={14}/>{jobs[selected].mode}</span></div><div className="match-banner"><Icon name="sparkles"/><span><strong>{jobs[selected].match}% profile match</strong><small>Your skills align strongly with this role.</small></span></div><Button className="full" disabled={appliedJobTitles.has(jobs[selected].title)} variant={appliedJobTitles.has(jobs[selected].title) ? "secondary" : "primary"} onClick={() => setApplicationJob(jobs[selected])}>{appliedJobTitles.has(jobs[selected].title) ? "Application sent" : "Apply now"}</Button><div className="detail-copy"><h3>About the role</h3><p>Join a collaborative product team shaping thoughtful digital experiences. You’ll partner closely with product, engineering and research to solve meaningful customer problems.</p><h3>What you’ll bring</h3><ul><li>5+ years of product design experience</li><li>Strong portfolio of end-to-end product work</li><li>Experience with accessible design systems</li></ul></div></aside></div>
+    {applicationJob && <ApplicationDialog job={applicationJob} onClose={() => setApplicationJob(null)} onSubmit={application => {
+      if (!saveApplication(application)) return false;
+      go("/candidate/application-confirmation");
+      return true;
+    }}/>}
   </div>;
 }
 
 function ApplicationDialog({ job, onClose, onSubmit }: { job: typeof jobs[0]; onClose: () => void; onSubmit: (application: DemoApplication) => boolean }) {
+  const defaultProfile = loadCandidateProfile();
+  const [cvMode, setCvMode] = useState<"default" | "new">(defaultProfile.cvFileName ? "default" : "new");
   const [cvFile, setCvFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [coverLetter, setCoverLetter] = useState("");
   const [submitError, setSubmitError] = useState("");
   useEffect(() => {
@@ -765,21 +715,31 @@ function ApplicationDialog({ job, onClose, onSubmit }: { job: typeof jobs[0]; on
   return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="application-dialog" role="dialog" aria-modal="true" aria-labelledby="application-dialog-title">
       <div className="dialog-header"><div><span className="eyebrow">Apply to {job.company}</span><h2 id="application-dialog-title">{job.title}</h2><p>Share your CV and a short cover letter with the hiring team.</p></div><button className="icon-btn" onClick={onClose} aria-label="Close application dialog"><Icon name="close"/></button></div>
-      <form onSubmit={event => {
+      <form onSubmit={async event => {
         event.preventDefault();
         const letter = coverLetter.trim();
-        if (!cvFile || !letter) {
-          setSubmitError(!cvFile ? "Please attach your CV before submitting." : "Please add a short cover letter before submitting.");
-          return;
-        }
-        if (!onSubmit({ id: `${Date.now()}`, jobTitle: job.title, company: job.company, location: job.location, match: job.match, initials: job.initials, tone: job.tone, submittedAt: new Date().toISOString(), status: "In review", cvFileName: cvFile.name, coverLetter: letter })) {
-          setSubmitError("We couldn’t save your application in this browser. Please try again.");
-        }
+        if (!letter) { setSubmitError("Please add a short cover letter before submitting."); return; }
+        if (cvMode === "new" && !cvFile) { setSubmitError("Please choose a CV for this application."); return; }
+        if (cvFile && cvMode === "new" && !isSupportedCV(cvFile)) { setSubmitError("Choose a PDF, DOC or DOCX file up to 10 MB."); return; }
+        setSubmitting(true); setSubmitError("");
+        try {
+          const file = cvMode === "default" ? await loadBrowserFile("profile-cv") : cvFile;
+          if (!file) { setSubmitError("Your saved CV could not be found. Upload a new CV or add it again to your profile."); return; }
+          const application: DemoApplication = { id: `${Date.now()}`, jobTitle: job.title, company: job.company, location: job.location, match: job.match, initials: job.initials, tone: job.tone, submittedAt: new Date().toISOString(), status: "In review", cvFileName: file.name, coverLetter: letter };
+          // A job-specific CV is stored separately, never overwriting the profile CV.
+          await saveBrowserFile(`application-cv-${application.id}`, file);
+          if (!onSubmit(application)) setSubmitError("We couldn't save this application in your browser. Please try again.");
+        } catch { setSubmitError("Your CV could not be stored in this browser. Please try again."); }
+        finally { setSubmitting(false); }
       }}>
-        <label className="file-field"><span className="field-label">CV <span aria-hidden="true">*</span></span><span className="file-input"><Icon name="file" size={17}/><input type="file" accept=".pdf,.doc,.docx" aria-required="true" onChange={event => { setCvFile(event.target.files?.[0] || null); setSubmitError(""); }}/><span>{cvFile?.name || "Choose a PDF or Word document"}</span></span><span className="field-helper">Demo mode saves the filename only; your file is not uploaded.</span></label>
+        <div className="cv-choice"><span className="field-label">CV for this application <span aria-hidden="true">*</span></span>
+          {defaultProfile.cvFileName && <label className={`cv-option ${cvMode === "default" ? "selected" : ""}`}><input type="radio" name="cv-mode" checked={cvMode === "default"} onChange={() => { setCvMode("default"); setSubmitError(""); }}/><span><strong>Use my saved CV</strong><small>{defaultProfile.cvFileName}</small></span></label>}
+          <label className={`cv-option ${cvMode === "new" ? "selected" : ""}`}><input type="radio" name="cv-mode" checked={cvMode === "new"} onChange={() => { setCvMode("new"); setSubmitError(""); }}/><span><strong>Upload current CV</strong><small>Choose a CV for this job. Your saved default stays unchanged.</small></span></label>
+        </div>
+        {cvMode === "new" && <label className="file-field"><span className="field-label">Choose CV</span><span className="file-input"><Icon name="file" size={17}/><input type="file" accept=".pdf,.doc,.docx" aria-required="true" onChange={event => { const selected = event.target.files?.[0] || null; setCvFile(selected); setSubmitError(selected && !isSupportedCV(selected) ? "Choose a PDF, DOC or DOCX file up to 10 MB." : ""); }}/><span>{cvFile?.name || "Choose a PDF or Word document"}</span></span><span className="field-helper">PDF, DOC or DOCX, up to 10 MB. Stored only in this browser for the mock application.</span></label>}
         <label className="field field-full"><span className="field-label">Cover letter <span aria-hidden="true">*</span></span><textarea required value={coverLetter} onChange={event => { setCoverLetter(event.target.value); setSubmitError(""); }} placeholder="Tell the hiring team why you’re a great fit for this role…"/><span className="field-helper">A thoughtful, role-specific note is usually most helpful.</span></label>
         {submitError && <p className="demo-storage-error" role="alert">{submitError}</p>}
-        <div className="dialog-footer"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit">Submit application</Button></div>
+        <div className="dialog-footer"><Button variant="secondary" onClick={onClose}>Cancel</Button><button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? "Saving…" : "Submit application"}</button></div>
       </form>
     </section>
   </div>;
@@ -833,13 +793,85 @@ function ApplicationConfirmationPage() {
 }
 
 function ProfilePage() {
-  const profileReadiness = getDisplayedProfileReadiness();
-  const [section, setSection] = useState("Personal details");
-  const sections = [["Personal details", true], ["CV & documents", true], ["Skills", true], ["Work experience", false], ["Education", false], ["Preferences", true]] as const;
-  return <div><PageHeader eyebrow="My profile" title="Profile readiness" description="A complete profile helps employers understand your experience and improves job matches."/>
-    <div className="profile-summary"><div className="readiness-ring small"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><circle className="ring-value" cx="40" cy="40" r="34" style={{ "--ring-fill": `${Math.round((profileReadiness / 100) * 214)} 214` } as React.CSSProperties}/></svg><span><strong>{profileReadiness}%</strong></span></div><div><h2>{profileReadiness === 100 ? "Your profile is ready" : "Your profile is almost ready"}</h2><p>{profileReadiness === 100 ? "Your profile is complete and ready for matched opportunities." : "Complete 2 remaining sections to make your profile visible for all matched opportunities."}</p>{profileReadiness !== 100 && <div className="missing"><span><Icon name="clock" size={14}/> Add work experience</span><span><Icon name="clock" size={14}/> Add education</span></div>}</div></div>
-    <div className="editor-layout profile-layout"><aside className="section-nav">{sections.map(([s, done]) => <button className={section === s ? "active" : ""} key={s} onClick={() => setSection(s)}>{done ? <span className="done"><Icon name="check" size={13}/></span> : <span/>}{s}<small>{done ? "Complete" : "Missing"}</small></button>)}</aside><section className="form-page"><div className="form-heading"><span className="step-icon"><Icon name="user"/></span><div><h2>{section}</h2><p>Keep your information accurate and up to date.</p></div></div><div className="avatar-upload"><Avatar initials="AM" color="purple" size="lg"/><div><strong>Profile photo</strong><p>JPG or PNG, up to 5 MB.</p><Button variant="secondary" icon="upload">Upload new photo</Button></div></div><div className="form-grid"><Field label="First name" placeholder="Alex"/><Field label="Last name" placeholder="Morgan"/><Field label="Email address" icon="mail" placeholder="alex@example.com"/><Field label="Phone number" placeholder="+27 72 000 0000"/><Field label="Location" icon="location" placeholder="Cape Town, South Africa"/><Field label="Professional headline" placeholder="Senior Product Designer"/></div><label className="field field-full"><span className="field-label">Professional summary</span><textarea defaultValue="Product designer focused on clear, accessible experiences for complex digital products."/></label></section></div>
-    <div className="profile-actions"><Button>Save changes</Button></div>
+  const [draft, setDraft] = useState<CandidateProfile>(loadCandidateProfile);
+  const [section, setSection] = useState<string>("Personal details");
+  const [fullNameInput, setFullNameInput] = useState(() => { const p = loadCandidateProfile(); return [p.firstName, p.lastName].filter(Boolean).join(" "); });
+  const [newCv, setNewCv] = useState<File | null>(null);
+  const [newPhoto, setNewPhoto] = useState<File | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [skillInput, setSkillInput] = useState("");
+  const [languageInput, setLanguageInput] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [saving, setSaving] = useState(false);
+  const { savedJobs } = useSavedJobs();
+  const checks = profileChecks(draft);
+  const requirements = readinessRequirements(draft);
+  const complete = requirements.filter(item => item.done).length;
+  const percent = calculateReadiness(draft);
+  const incomplete = requirements.filter(item => !item.done);
+  const change = (key: keyof CandidateProfile, value: string) => { setDraft(current => ({ ...current, [key]: value })); setFeedback(""); };
+  const field = (label: string, key: keyof CandidateProfile, placeholder = "", type = "text", helper = "") => <label className="field"><span className="field-label">{label}</span><span className="input-wrap"><input type={type} min={type === "number" ? 0 : undefined} value={draft[key]} placeholder={placeholder} onChange={event => change(key, event.target.value)}/></span>{helper && <span className="field-helper">{helper}</span>}</label>;
+  const tags = (key: "skills" | "languages", input: string, setInput: (value: string) => void, placeholder: string) => {
+    const values = splitTags(draft[key]);
+    const add = () => {
+      const item = input.trim().replace(/,/g, "");
+      if (item && !values.some(value => value.toLowerCase() === item.toLowerCase())) change(key, [...values, item].join(", "));
+      setInput("");
+    };
+    return <div className="profile-tag-editor"><div className="profile-tags">{values.map(item => <span className="profile-tag" key={item}>{item}<button type="button" onClick={() => change(key, values.filter(v => v !== item).join(", "))} aria-label={`Remove ${item}`}><Icon name="close" size={13}/></button></span>)}</div><div className="profile-tag-add"><input type="text" value={input} placeholder={placeholder} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" || event.key === ",") { event.preventDefault(); add(); } }}/><button className="btn btn-secondary" type="button" onClick={add}><Icon name="plus" size={15}/> Add {key === "skills" ? "skill" : "language"}</button></div></div>;
+  };
+  useEffect(() => {
+    let disposed = false;
+    let url: string | null = null;
+    const display = (file: File) => { if (!disposed) { url = URL.createObjectURL(file); setPhotoUrl(url); } };
+    setPhotoUrl(null);
+    if (newPhoto) display(newPhoto);
+    else if (draft.photoFileName) loadBrowserFile("profile-photo").then(file => { if (file) display(file); }).catch(() => {});
+    return () => { disposed = true; if (url) URL.revokeObjectURL(url); };
+  }, [newPhoto, draft.photoFileName]);
+  const save = async () => {
+    setSaving(true); setFeedback("");
+    try {
+      // Do not persist a new filename unless its actual file is saved successfully.
+      if (newCv) await saveBrowserFile("profile-cv", newCv);
+      if (newPhoto) await saveBrowserFile("profile-photo", newPhoto);
+      storeCandidateProfile(draft);
+      setNewCv(null); setNewPhoto(null);
+      setFeedback(`Profile saved. ${complete}/10 required items completed — ${percent}% ready.`);
+    } catch { setFeedback("Profile could not be saved. Check browser storage and try again."); }
+    finally { setSaving(false); }
+  };
+  const viewCurrentCv = async () => {
+    try {
+      const file = newCv || await loadBrowserFile("profile-cv");
+      if (!file) { setFeedback("Your current CV isn't stored in this browser. Choose the file again and save changes."); return; }
+      const url = URL.createObjectURL(file);
+      const link = document.createElement("a"); link.href = url; link.download = file.name; link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 3000);
+    } catch { setFeedback("Couldn't open the saved CV. Please re-upload it."); }
+  };
+  const regions = ["Erongo", "Hardap", "//Kharas", "Kavango East", "Kavango West", "Khomas", "Kunene", "Ohangwena", "Omaheke", "Omusati", "Oshana", "Oshikoto", "Otjozondjupa", "Zambezi"];
+  const employmentTypes = ["Full-time", "Part-time", "Contract", "Temporary", "Internship"];
+  return <div><PageHeader eyebrow="My profile" title="Profile readiness" description="Complete the required fields to reach 100%. Optional career details improve your profile without blocking completion."/>
+    <div className="profile-summary"><div className="readiness-ring small"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><circle className="ring-value" cx="40" cy="40" r="34" style={{ "--ring-fill": `${Math.round(percent / 100 * 214)} 214` } as React.CSSProperties}/></svg><span><strong>{percent}%</strong></span></div><div><h2>{percent === 100 ? "Your profile is ready" : "Build your complete profile"}</h2><p>{complete}/10 required items completed · {percent}% ready{percent === 100 ? " · Ready to apply" : ""}.</p>{incomplete.length > 0 ? <div className="missing">{incomplete.slice(0, 4).map(item => <span key={item.label}><Icon name="clock" size={14}/>{item.label}</span>)}</div> : <div className="missing"><span><Icon name="check" size={14}/>All required information complete</span></div>}</div></div>
+    <div className="editor-layout profile-layout"><aside className="section-nav" aria-label="Profile sections">{profileSections.map(name => { const required = checks[name]; const done = required.length > 0 && required.every(Boolean); return <button type="button" className={section === name ? "active" : ""} key={name} onClick={() => setSection(name)}><span className={done ? "done" : ""}>{done && <Icon name="check" size={13}/>}</span>{name}<small>{required.length ? done ? "Complete" : "Incomplete" : "Optional"}</small></button>; })}</aside>
+      <section className="form-page"><div className="form-heading"><span className="step-icon"><Icon name={section === "CV & documents" ? "file" : section === "Links" ? "external" : "user"}/></span><div><h2>{section}</h2><p>{section === "Personal details" ? "The required fields are marked with an asterisk." : section === "CV & documents" ? "Your current CV will be available to select during job applications." : section === "Skills" ? "Add at least three skills to complete this section." : "Optional details help employers understand you better."}</p></div></div>
+      {section === "Personal details" && <>
+        <div className="avatar-upload"><span className="profile-photo-preview">{photoUrl ? <img src={photoUrl} alt="Your profile photo"/> : <Avatar initials={(draft.firstName[0] || "A") + (draft.lastName[0] || "M")} color="purple" size="lg"/>}</span><div><strong>Profile photo *</strong><p>PNG, JPG or WebP, up to 10 MB. Displayed as a circle on your profile.</p><label className="btn btn-secondary file-upload-btn"><Icon name="upload" size={15}/><span>{draft.photoFileName ? "Change photo" : "Upload photo"}</span><input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={event => { const file = event.target.files?.[0]; if (!file) return; if (!isSupportedPhoto(file)) { setFeedback("Photo must be PNG, JPG or WebP, up to 10 MB."); return; } setNewPhoto(file); change("photoFileName", file.name); }}/></label></div></div>
+        <div className="form-grid"><label className="field"><span className="field-label">Full name *</span><span className="input-wrap"><input type="text" value={fullNameInput} placeholder="Your full name" onChange={event => { const name = event.target.value; setFullNameInput(name); const pieces = name.trim().split(/\s+/); setDraft(current => ({ ...current, firstName: pieces.shift() || "", lastName: pieces.join(" ") })); setFeedback(""); }}/></span></label>{field("Email address *", "email", "you@example.com", "email", "Demo account email, stored locally.")}{field("Mobile number (optional)", "phone", "081 234 567", "tel")}{field("City / town *", "city", "Windhoek")}
+          <label className="field"><span className="field-label">Region *</span><select className="profile-select" value={draft.region} onChange={event => change("region", event.target.value)}><option value="">Select Namibian region</option>{regions.map(region => <option key={region}>{region}</option>)}</select></label>{field("Headline *", "headline", "e.g. Software engineer")}</div>
+        <label className="field field-full"><span className="field-label">About you *</span><textarea value={draft.summary} onChange={event => change("summary", event.target.value)} placeholder="Briefly describe your experience, skills and the kind of role you're looking for…"/></label>
+      </>}
+      {section === "CV & documents" && <div className="profile-fields-stack"><label className="file-field"><span className="field-label">Current CV / résumé *</span><span className="file-input"><Icon name="upload"/><input type="file" accept=".pdf,.doc,.docx" onChange={event => { const file = event.target.files?.[0]; if (!file) return; if (!isSupportedCV(file)) { setFeedback("CV must be PDF, DOC or DOCX, up to 10 MB."); return; } setNewCv(file); change("cvFileName", file.name); }}/><span>{draft.cvFileName || "Choose PDF or Word document"}</span></span></label><p className="field-helper">PDF, DOC or DOCX, up to 10 MB. Choose a file and click Save changes. This becomes your default CV for applying to jobs; uploading another CV during an application will not replace it.</p>{draft.cvFileName && <div className="profile-file-row"><p className="profile-file-chip"><Icon name="file"/>{draft.cvFileName}</p><button className="btn btn-secondary" type="button" onClick={viewCurrentCv}>Download current CV</button></div>}</div>}
+      {section === "Skills" && <div className="profile-fields-stack"><span className="field-label">Skills * <small>({splitTags(draft.skills).length}/3 minimum)</small></span>{tags("skills",skillInput,setSkillInput,"Type a skill and press Enter")}<p className="field-helper">Add tools, technologies, or competencies. You need at least three distinct skills for 100% readiness.</p></div>}
+      {section === "Work experience" && <><div className="form-grid">{field("Job title", "jobTitle", "Frontend developer")}{field("Company or organisation", "employer", "Company name")}</div><label className="field field-full"><span className="field-label">Experience description</span><textarea value={draft.experienceDescription} onChange={event => change("experienceDescription", event.target.value)} placeholder="Describe work, internships or projects…"/></label></>}
+      {section === "Education" && <div className="form-grid">{field("Qualification", "qualification", "BSc Computer Science")}{field("Institution", "institution", "University or school")}{field("Graduation year", "graduationYear", "2026")}</div>}
+      {section === "Preferences" && <div className="profile-fields-stack"><div className="field"><span className="field-label">Employment types</span><div className="profile-choice-grid">{employmentTypes.map(type => { const chosen = splitTags(draft.employmentTypes).includes(type); return <button type="button" className={`profile-choice ${chosen ? "active" : ""}`} aria-pressed={chosen} key={type} onClick={() => change("employmentTypes", (chosen ? splitTags(draft.employmentTypes).filter(t => t !== type) : [...splitTags(draft.employmentTypes),type]).join(", "))}>{chosen && <Icon name="check" size={13}/>} {type}</button>; })}</div></div><div className="form-grid">{field("Years of experience", "yearsExperience", "3", "number")}{field("Notice period (days)", "noticePeriod", "14", "number")}{field("Preferred role", "desiredRole", "UX Designer")}<label className="field"><span className="field-label">Work arrangement</span><select className="profile-select" value={draft.workMode} onChange={e => change("workMode", e.target.value)}><option value="">Select arrangement</option><option>Remote</option><option>Hybrid</option><option>On-site</option><option>Flexible</option></select></label>{field("Availability", "availability", "Immediately, 2 weeks")}</div><label className="profile-checkbox"><input type="checkbox" checked={draft.relocating === "yes"} onChange={e => change("relocating", e.target.checked ? "yes" : "no")}/><span>Open to relocating within Namibia</span></label></div>}
+      {section === "Links" && <div className="profile-fields-stack"><span className="field-label">Languages spoken (optional)</span>{tags("languages",languageInput,setLanguageInput,"e.g. English")}<div className="form-grid">{field("LinkedIn profile", "linkedin", "https://linkedin.com/in/...", "url")}{field("Portfolio or website", "portfolio", "https://your-portfolio.com", "url")}{field("GitHub URL", "github", "https://github.com/...", "url")}</div><p className="field-helper">These details are optional, but help employers learn more about you.</p></div>}
+      </section></div>
+    <div className="profile-actions"><span className="profile-save-note" role="status" aria-live="polite">{feedback}</span><button type="button" className="btn btn-primary" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save changes"}</button></div>
+    <section className="profile-saved-section surface"><div><span className="step-icon"><Icon name="bookmark"/></span><div><h2>Saved jobs</h2><p>{savedJobs.length ? `${savedJobs.length} saved ${savedJobs.length === 1 ? "opportunity" : "opportunities"} ready to revisit.` : "Bookmark roles you're interested in and find them here."}</p></div></div><Button variant="secondary" onClick={() => go("/candidate/saved-jobs")}>View saved jobs <Icon name="arrow" size={14}/></Button></section>
+    <p className="demo-note profile-browser-note"><Icon name="lock" size={14}/>Demo profile and documents are stored in this browser on this device, not uploaded to a server.</p>
   </div>;
 }
 
@@ -862,7 +894,7 @@ function AuthPage({ kind = "login" }: { kind?: "login" | "signup" | "forgot" | "
   }
   if (kind === "apply") return <PublicApplication/>;
   const copy = kind === "signup" ? ["Create your account", "Join RecruitFlow to find your next opportunity or build your team.", "Create account"] : kind === "forgot" ? ["Reset your password", "Enter your email and we’ll send reset instructions if an account exists.", "Send reset link"] : kind === "reset" ? ["Choose a new password", "Create a strong password you don’t use elsewhere.", "Reset password"] : kind === "invite" ? ["Join Northstar Labs", "You’ve been invited to join the recruiter workspace as a Recruiter.", "Accept invitation"] : ["Welcome to RecruitFlow", "Sign in to continue to your workspace.", "Sign in"];
-  return <div className={`auth-layout ${kind === "login" ? "auth-login" : ""}`}><aside className="auth-aside">{kind === "login" ? <>
+  return <div className={`auth-layout ${kind === "login" ? "auth-login" : kind === "signup" ? "auth-signup" : ""}`}><aside className="auth-aside">{(kind === "login" || kind === "signup") ? <>
     <div className="auth-brand-lockup"><Logo/><span>by Refrane</span></div>
     <div className="auth-feature">
       <span className="auth-feature-eyebrow">YOUR RECRUITFLOW WORKSPACE</span>
@@ -892,65 +924,13 @@ function AuthPage({ kind = "login" }: { kind?: "login" | "signup" | "forgot" | "
   </div></main></div>;
 }
 
-function CandidateFormBlock({ block, onCoverLetterChange, onFileChange }: { block: FormBlock; onCoverLetterChange: (value: string) => void; onFileChange: (file: File | null) => void }) {
-  const label = <span className="field-label">{block.label}{block.isRequired && <span aria-hidden="true"> *</span>}</span>;
-  if (block.type === "divider") return <div className="form-divider"/>;
-  if (block.type === "heading") return <div className="subheading"><h3>{block.label}</h3></div>;
-  if (block.type === "fileUpload") return <label className="file-field">{label}<span className="file-input"><Icon name="upload" size={17}/><input type="file" accept={block.metadata.acceptedTypes || ".pdf,.doc,.docx"} required={block.isRequired} onChange={event => onFileChange(event.target.files?.[0] || null)}/><span>{block.placeholder}</span></span>{block.metadata.helpText && <span className="field-helper">{block.metadata.helpText}</span>}</label>;
-  if (block.type === "dropdown") return <label className="field">{label}<select className="review-select" required={block.isRequired} defaultValue=""><option value="" disabled>{block.placeholder}</option>{block.options.map(option => <option key={option}>{option}</option>)}</select>{block.metadata.helpText && <span className="field-helper">{block.metadata.helpText}</span>}</label>;
-  if (block.type === "multipleChoice") return <fieldset className="field"><legend>{label}</legend>{block.options.map(option => <label key={option}><input type="checkbox"/>{option}</label>)}</fieldset>;
-  if (block.type === "datePicker") return <label className="field">{label}<input className="setting-input" type="date" required={block.isRequired}/>{block.metadata.helpText && <span className="field-helper">{block.metadata.helpText}</span>}</label>;
-  return <label className="field">{label}<textarea required={block.isRequired} maxLength={block.metadata.maxLength} placeholder={block.placeholder} onChange={block.type === "richText" ? event => onCoverLetterChange(event.target.value) : undefined}/>{block.metadata.helpText && <span className="field-helper">{block.metadata.helpText}</span>}</label>;
-}
-
-function PublicConfiguredApplication({ campaign, blocks }: { campaign: DemoCampaign; blocks: FormBlock[] }) {
-  const [cvFile, setCvFile] = useState<File | null>(null);
-  const [coverLetter, setCoverLetter] = useState("");
-  const [submitError, setSubmitError] = useState("");
-  const { saveApplication } = useDemoApplications();
-  const fileBlock = blocks.find(block => block.type === "fileUpload");
-  const coverBlock = blocks.find(block => block.type === "richText");
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (fileBlock?.isRequired && !cvFile) { setSubmitError(`Please complete "${fileBlock.label}" before submitting.`); return; }
-    if (coverBlock?.isRequired && !coverLetter.trim()) { setSubmitError(`Please complete "${coverBlock.label}" before submitting.`); return; }
-    if (!saveApplication({ id: `${Date.now()}`, jobTitle: campaign.title, company: "Orbit Systems", location: campaign.location, match: 92, initials: "OS", tone: "blue", submittedAt: new Date().toISOString(), status: "In review", cvFileName: cvFile?.name || "Not provided", coverLetter: coverLetter.trim() || "Not provided" })) {
-      setSubmitError("We couldn’t save your application in this browser. Please try again.");
-      return;
-    }
-    go("/candidate/application-confirmation");
-  };
-  return <div className="application-public"><header className="application-header"><div className="employer-brand"><span className="company-logo logo-blue">OS</span><span><strong>Orbit Systems</strong><small>Powered by RecruitFlow</small></span></div><span className="secure"><Icon name="lock" size={14}/> Secure application</span></header><main className="application-form-page"><div className="application-cover" aria-hidden="true"><img src={asset("assets/workplaces/office-3.jpg")} alt="" /><div className="application-cover-overlay"><img src={asset("assets/recruitflow-logo.png")} alt="" /></div></div><div className="role-intro"><Badge tone="success">Applications open</Badge><h1>{campaign.title}</h1><div className="job-meta"><span><Icon name="location" size={15}/>{campaign.location}</span><span><Icon name="briefcase" size={15}/>{campaign.workArrangement} · {campaign.employmentType}</span></div><p>{campaign.summary}</p></div><div className="application-columns"><aside><h2>Your application</h2><div className="current"><span>1</span>Application form</div><p>Complete the fields below and submit your application to Orbit Systems.</p></aside><section className="form-page"><form onSubmit={submit}><div className="form-heading"><div><h2>Application form</h2><p>Share your experience and details with the hiring team.</p></div></div>{blocks.map(block => <CandidateFormBlock key={block.id} block={block} onCoverLetterChange={setCoverLetter} onFileChange={setCvFile}/>)}{submitError && <p className="demo-storage-error" role="alert">{submitError}</p>}<div className="form-footer"><span>{blocks.filter(block => block.type !== "heading" && block.type !== "divider").length} fields</span><Button type="submit">Submit application</Button></div></form></section></div></main></div>;
-}
-
 function PublicApplication() {
-  const [step, setStep] = useState(0);
-  const [cvFile, setCvFile] = useState<File | null>(null);
-  const [coverLetter, setCoverLetter] = useState("");
-  const [submitError, setSubmitError] = useState("");
-  const campaign = readDemoCampaign();
-  const { saveApplication } = useDemoApplications();
-  const steps = ["Personal details", "Experience", "Documents", "Additional questions"];
-  const next = () => { setSubmitError(""); setStep(current => Math.min(current + 1, steps.length - 1)); };
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (step < steps.length - 1) { next(); return; }
-    if (!cvFile) { setSubmitError("Please attach your CV before submitting."); return; }
-    if (!coverLetter.trim()) { setSubmitError("Please add a short cover letter before submitting."); return; }
-    if (!saveApplication({ id: `${Date.now()}`, jobTitle: campaign.title, company: "Orbit Systems", location: campaign.location, match: 92, initials: "OS", tone: "blue", submittedAt: new Date().toISOString(), status: "In review", cvFileName: cvFile.name, coverLetter: coverLetter.trim() })) {
-      setSubmitError("We couldn’t save your application in this browser. Please try again.");
-      return;
-    }
-    go("/candidate/application-confirmation");
-  };
-  if (!campaign.published) return <div className="public-page"><header className="public-header"><Logo/><Button variant="ghost" onClick={() => go("/login")}>Sign in</Button></header><main className="state-page"><div className="state-icon state-unavailable"><Icon name="clock" size={30}/></div><h1>Applications are not open yet</h1><p>This campaign is still being prepared by the hiring team. Please check back after it has been published.</p><Button onClick={() => go("/candidate/jobs")}>Back to opportunities</Button></main></div>;
-  if (campaign.formBlocks?.length) return <PublicConfiguredApplication campaign={campaign} blocks={campaign.formBlocks}/>;
-  return <div className="application-public"><header className="application-header"><div className="employer-brand"><span className="company-logo logo-blue">OS</span><span><strong>Orbit Systems</strong><small>Powered by RecruitFlow</small></span></div><span className="secure"><Icon name="lock" size={14}/> Secure application</span></header><main className="application-form-page"><div className="application-cover" aria-hidden="true"><img src={asset("assets/workplaces/office-3.jpg")} alt="" /><div className="application-cover-overlay"><img src={asset("assets/recruitflow-logo.png")} alt="" /></div></div><div className="role-intro"><Badge tone="success">Applications open</Badge><h1>{campaign.title}</h1><div className="job-meta"><span><Icon name="location" size={15}/>{campaign.location}</span><span><Icon name="briefcase" size={15}/>{campaign.workArrangement} · {campaign.employmentType}</span></div><p>{campaign.summary}</p></div><div className="application-columns"><aside><h2>Your application</h2>{steps.map((x, i) => <div className={i === step ? "current" : i < step ? "complete" : ""} key={x}><span>{i < step ? <Icon name="check" size={13}/> : i + 1}</span>{x}</div>)}</aside><section className="form-page"><form onSubmit={submit}><div className="form-heading"><div><h2>{steps[step]}</h2><p>{step === 0 ? "Tell the hiring team how they can reach you." : step === 1 ? "Share the experience that makes you a strong fit." : step === 2 ? "Add the documents the hiring team will review." : "A final note helps us understand your motivation."}</p></div></div>{step === 0 && <><div className="form-grid"><Field label="First name" placeholder="Your first name" required/><Field label="Last name" placeholder="Your last name" required/><Field label="Email address" icon="mail" placeholder="you@example.com" type="email" required/><Field label="Phone number" placeholder="+27" required/></div><Field label="Current location" icon="location" placeholder="City, country" required/></>}{step === 1 && <><Field label="Portfolio URL" icon="external" placeholder="https://yourportfolio.com" required/><label className="field"><span className="field-label">Years of experience</span><select className="review-select" required><option value="">Select an option</option><option>1–2 years</option><option>3–5 years</option><option>5+ years</option></select></label><label className="field"><span className="field-label">What kind of work energises you?</span><textarea placeholder="Tell us about the products or problems you enjoy working on…" required/></label></>}{step === 2 && <label className="file-field"><span className="field-label">CV or resume <span aria-hidden="true">*</span></span><span className="file-input"><Icon name="upload" size={17}/><input type="file" accept=".pdf,.doc,.docx" required={!cvFile} onChange={event => { setCvFile(event.target.files?.[0] || null); setSubmitError(""); }}/><span>{cvFile?.name || "Choose a PDF or Word document"}</span></span><span className="field-helper">Demo mode saves the filename only; your file is not uploaded.</span></label>}{step === 3 && <><label className="field"><span className="field-label">Cover letter <span aria-hidden="true">*</span></span><textarea value={coverLetter} onChange={event => { setCoverLetter(event.target.value); setSubmitError(""); }} placeholder={`Tell Orbit Systems why you’re excited about this role…`} required/></label><label className="field"><span className="field-label">When could you start?</span><select className="review-select"><option>Immediately</option><option>Within one month</option><option>Within three months</option></select></label></>}{submitError && <p className="demo-storage-error" role="alert">{submitError}</p>}<div className="form-footer"><span>Step {step + 1} of {steps.length}</span><div>{step > 0 && <Button variant="secondary" onClick={() => { setSubmitError(""); setStep(current => current - 1); }}>Back</Button>}{step < steps.length - 1 ? <Button type="submit">Continue <Icon name="arrow" size={15}/></Button> : <Button type="submit">Submit application</Button>}</div></div></form></section></div></main></div>;
+  return <div className="application-public"><header className="application-header"><div className="employer-brand"><span className="company-logo logo-blue">OS</span><span><strong>Orbit Systems</strong><small>Powered by RecruitFlow</small></span></div><span className="secure"><Icon name="lock" size={14}/> Secure application</span></header><main className="application-form-page"><div className="application-cover" aria-hidden="true"><img src={asset("assets/workplaces/office-3.jpg")} alt="" /><div className="application-cover-overlay"><img src={asset("assets/recruitflow-logo.png")} alt="" /></div></div><div className="role-intro"><Badge tone="success">Applications open</Badge><h1>Senior Product Designer</h1><div className="job-meta"><span><Icon name="location" size={15}/>Cape Town</span><span><Icon name="briefcase" size={15}/>Hybrid · Full-time</span></div><p>Help us shape clear, useful experiences for thousands of growing teams.</p></div><div className="application-columns"><aside><h2>Your application</h2>{["Personal details", "Experience", "Documents", "Additional questions"].map((x, i) => <div className={i === 0 ? "current" : ""} key={x}><span>{i + 1}</span>{x}</div>)}</aside><section className="form-page"><div className="form-heading"><div><h2>Personal details</h2><p>Tell the hiring team how they can reach you.</p></div></div><div className="form-grid"><Field label="First name" placeholder="Your first name"/><Field label="Last name" placeholder="Your last name"/><Field label="Email address" icon="mail" placeholder="you@example.com"/><Field label="Phone number" placeholder="+27"/></div><Field label="Current location" icon="location" placeholder="City, country"/><div className="form-footer"><span>Step 1 of 4</span><Button>Continue <Icon name="arrow" size={15}/></Button></div></section></div></main></div>;
 }
 
 function App() {
-  const [path, setPath] = useState(getAppPath);
-  useEffect(() => { const handler = () => setPath(getAppPath()); window.addEventListener("popstate", handler); return () => window.removeEventListener("popstate", handler); }, []);
+  const [path, setPath] = useState(window.location.pathname);
+  useEffect(() => { const handler = () => setPath(window.location.pathname); window.addEventListener("popstate", handler); return () => window.removeEventListener("popstate", handler); }, []);
   const content = useMemo(() => {
     if (path === "/" || path === "/login") return <AuthPage/>;
     if (path === "/create-account") return <AuthPage kind="signup"/>;
@@ -967,6 +947,7 @@ function App() {
       else if (path.includes("/application-confirmation")) page = <ApplicationConfirmationPage/>;
       else if (path.includes("/applications")) page = <ApplicationsPage/>;
       else if (path.includes("/settings/profile")) page = <ProfilePage/>;
+      else if (path === "/candidate/saved-jobs") page = <SavedJobsPage/>;
       else if (path.includes("/subscription")) page = <BillingPage/>;
       return <AppShell mode="candidate" path={path}>{page}</AppShell>;
     }
@@ -983,7 +964,7 @@ function App() {
     }
     return <AuthPage kind="404"/>;
   }, [path]);
-  return <div className="page-transition" key={path}>{content}</div>;
+  return <><div className="page-transition" key={path}>{content}</div><JobToastManager/></>;
 }
 
 export default App;
