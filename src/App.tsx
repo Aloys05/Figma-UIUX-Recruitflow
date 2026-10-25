@@ -449,7 +449,7 @@ function ApplicationFormBuilder({ onBack }: { onBack: () => void }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<PreviewViewport>("desktop");
-  const [brandColor, setBrandColor] = useState("#615cf4");
+  const [brandColor, setBrandColor] = useState("#0060f0");
   const [previewFont, setPreviewFont] = useState("DM Sans");
   const [bannerImage, setBannerImage] = useState("");
   const [darkTheme, setDarkTheme] = useState(false);
@@ -862,7 +862,7 @@ function AuthPage({ kind = "login" }: { kind?: "login" | "signup" | "forgot" | "
   }
   if (kind === "apply") return <PublicApplication/>;
   const copy = kind === "signup" ? ["Create your account", "Join RecruitFlow to find your next opportunity or build your team.", "Create account"] : kind === "forgot" ? ["Reset your password", "Enter your email and we’ll send reset instructions if an account exists.", "Send reset link"] : kind === "reset" ? ["Choose a new password", "Create a strong password you don’t use elsewhere.", "Reset password"] : kind === "invite" ? ["Join Northstar Labs", "You’ve been invited to join the recruiter workspace as a Recruiter.", "Accept invitation"] : ["Welcome to RecruitFlow", "Sign in to continue to your workspace.", "Sign in"];
-  return <div className={`auth-layout ${kind === "login" ? "auth-login" : ""}`}><aside className="auth-aside">{kind === "login" ? <>
+  return <div className={`auth-layout ${kind === "login" ? "auth-login" : kind === "signup" ? "auth-signup" : ""}`}><aside className="auth-aside">{kind === "login" ? <>
     <div className="auth-brand-lockup"><Logo/><span>by Refrane</span></div>
     <div className="auth-feature">
       <span className="auth-feature-eyebrow">YOUR RECRUITFLOW WORKSPACE</span>
