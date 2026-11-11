@@ -119,7 +119,9 @@ The navigation badge, summary ring, candidate sidebar, and candidate overview ba
 
 The deployed frontend uses browser `localStorage` for demonstration data. Submitted candidate applications are stored under `recruitflow.demoApplications`, so they remain available after refreshes and browser restarts on the same browser and device. Recruiter candidate views read the same entries, allowing the complete application and review flow to be demonstrated without a backend.
 
-This is intentionally local to the browser: data is not shared between users, browsers, or devices, and uploaded files are represented by their filename only. A real deployment should replace these storage helpers with authenticated API requests and server-side file storage.
+Team members and pending recruiter invitations are stored under `recruitflow.demoTeam`. Recruiter invite links open `/invitation/:inviteId`, where the invitee creates an account using the invited email address. A successful sign-up adds them to the team and consumes the one-time link; links expire after seven days. The Approver sign-in choice opens `/approver` as a standalone page, separate from the recruiter workspace navigation.
+
+This is intentionally local to the browser: data is not shared between users, browsers, or devices, passwords are not stored, and uploaded files are represented by their filename only. A real deployment should replace these storage helpers with authenticated API requests and server-side file storage.
 
 To reset demo applications from the browser console:
 
