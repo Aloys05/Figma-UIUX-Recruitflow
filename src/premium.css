@@ -411,6 +411,21 @@ td { padding: .9rem 1.05rem; border-color: #f0f1f7; font-size: .73rem; }
 .persona-picker-label small { color: #77819a; font-size: .66rem; font-weight: 600; }
 .persona-picker-label select { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; appearance: none; border: 0; border-radius: inherit; outline: 0; padding: 0; opacity: 0; cursor: pointer; }
 .persona-picker-chevron { display: grid; place-items: center; width: 2rem; height: 2rem; flex: none; border-radius: .65rem; background: #f0f4fb; color: #61708f; transform: rotate(90deg); pointer-events: none; }
+.persona-picker-static { cursor: default; }
+.auth-login .persona-switch-label { display: block; margin-bottom: .45rem; }
+.auth-login .persona-switch {
+  min-height: 3.75rem; margin-bottom: 1.1rem; padding: .25rem;
+  border: 1px solid #e1e8f3; border-radius: .9rem; background: #f1f5fa;
+}
+.auth-login .persona-switch button {
+  height: 3.1rem; border-radius: .72rem; color: #405772;
+  font-size: .88rem; font-weight: 600;
+}
+.auth-login .persona-switch button.active {
+  border: 1px solid #e1e8f0; color: #1e293b;
+}
+.auth-login-links { display: flex; justify-content: space-between; gap: .75rem; }
+.auth-login-links > span { white-space: nowrap; }
 .auth-form .field-label { font-size: .78rem; }
 .auth-form .input-wrap { height: 3.12rem; }
 .auth-form .btn.full { min-height: 3rem; margin-top: .4rem; }
@@ -641,6 +656,7 @@ td { padding: .9rem 1.05rem; border-color: #f0f1f7; font-size: .73rem; }
   .workspace-showcase h2 { font-size: clamp(1.5rem,3vw,2.15rem); }
 }
 @media (max-width: 38rem) {
+  .auth-login-links { flex-direction: column; gap: .3rem; }
   .auth-login .auth-aside { padding: 1.3rem 1.25rem 1rem; }
   .auth-login .auth-brand-lockup .brand-symbol { width: 2.4rem; height: 2.4rem; }
   .auth-login .auth-brand-lockup .logo { font-size: 1.06rem; }
@@ -716,7 +732,7 @@ td { padding: .9rem 1.05rem; border-color: #f0f1f7; font-size: .73rem; }
   .auth-login .auth-form { margin: 0 auto; max-width: 27rem; }
   .auth-login .auth-heading { margin-bottom: clamp(.6rem, 2dvh, 1.3rem); }
   .auth-login .auth-heading h1 { font-size: clamp(1.55rem, 2.45vw, 2.25rem); }
-  .auth-login .persona-picker { margin-bottom: clamp(.55rem, 1.6dvh, 1.05rem); }
+  .auth-login .persona-picker,.auth-login .persona-switch { margin-bottom: clamp(.55rem, 1.6dvh, 1.05rem); }
   .auth-login .auth-form .field { margin-bottom: clamp(.6rem, 1.7dvh, 1.1rem); }
   .auth-login .or { margin: clamp(.5rem, 1.7dvh, 1rem) 0; }
   .auth-login .auth-bottom { margin-top: clamp(.45rem, 1.4dvh, .9rem); }
@@ -730,8 +746,9 @@ td { padding: .9rem 1.05rem; border-color: #f0f1f7; font-size: .73rem; }
   .auth-login .auth-heading { margin-bottom: .45rem; }
   .auth-login .auth-heading h1 { font-size: 1.48rem; }
   .auth-login .auth-heading p { line-height: 1.3; }
-  .auth-login .persona-picker { min-height: 3.6rem; margin-bottom: .45rem; padding: .45rem .65rem; }
+  .auth-login .persona-picker,.auth-login .persona-switch { min-height: 3.6rem; margin-bottom: .45rem; padding: .45rem .65rem; }
   .auth-login .persona-picker-icon { width: 2.4rem; height: 2.4rem; }
+  .auth-login .persona-switch button { height: 2.6rem; }
   .auth-login .persona-message { margin-bottom: .45rem; }
   .auth-login .auth-form .field { margin-bottom: .5rem; }
   .auth-login .auth-form .input-wrap { height: 2.55rem; min-height: 2.55rem; }
