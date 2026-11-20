@@ -1,64 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { campaignPipelineStages, getCandidateScreeningData, getScreeningRequirementKey, loadCampaignCandidates, saveCampaignCandidates, type CampaignCandidate, type CandidateScreeningRequirement, type CandidateScreeningData, type CandidateStage, type ScreeningCorrectionResult } from "./campaignPipelineData";
+import { Badge, Button, Icon, type IconName } from "./ui";
+import RefereeFormPage from "./RefereeFormPage";
+import CampaignWorkspacePage from "./campaign/CampaignWorkspacePage";
+import { PublishCampaignDialog } from "./campaign/CampaignStatusDialog";
+import { actorForRole, canPerform, useMockCampaignRole } from "./campaign/permissions";
+import { ORGANISATION_PEOPLE, campaignTeamOf } from "./campaign/team";
+import { appendCampaignActivity } from "./campaign/workspaceStore";
+import CampaignEvaluationSection from "./campaign/CampaignEvaluationSection";
+import { DEFAULT_AI_EVALUATION_INSTRUCTIONS, MAX_EVALUATION_INSTRUCTIONS, readOrganisationEvaluation, saveOrganisationEvaluation } from "./campaign/evaluation";
 
 // Resolve bundled reference images correctly on localhost and subpath deployments.
 const asset = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
-
-type IconName =
-  | "home" | "briefcase" | "users" | "sparkles" | "settings" | "search"
-  | "bell" | "plus" | "arrow" | "dots" | "check" | "clock" | "chevron"
-  | "filter" | "file" | "target" | "user" | "logOut" | "menu" | "close"
-  | "building" | "card" | "lock" | "mail" | "eye" | "upload" | "location" | "minus"
-  | "calendar" | "bookmark" | "external";
-
-function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
-  const paths: Record<IconName, React.ReactNode> = {
-    home: <><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9M9 20v-6h6v6"/></>,
-    briefcase: <><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2"/></>,
-    users: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></>,
-    sparkles: <><path d="m12 3-1.2 3.2L8 7.5l2.8 1.3L12 12l1.2-3.2L16 7.5l-2.8-1.3L12 3Z"/><path d="m5 13-.9 2.1L2 16l2.1.9L5 19l.9-2.1L8 16l-2.1-.9L5 13ZM19 13l-.9 2.1L16 16l2.1.9L19 19l.9-2.1L22 16l-2.1-.9L19 13Z"/></>,
-    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
-    search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
-    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></>,
-    plus: <path d="M12 5v14M5 12h14"/>,
-    minus: <path d="M5 12h14"/>,
-    arrow: <path d="m9 18 6-6-6-6"/>,
-    dots: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
-    check: <path d="m5 12 4 4L19 6"/>,
-    clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
-    chevron: <path d="m9 18 6-6-6-6"/>,
-    filter: <path d="M4 5h16M7 12h10M10 19h4"/>,
-    file: <><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h5M9 13h6M9 17h6"/></>,
-    target: <><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></>,
-    user: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
-    logOut: <><path d="M10 4H4v16h6M14 8l4 4-4 4M18 12H8"/></>,
-    menu: <path d="M4 7h16M4 12h16M4 17h16"/>,
-    close: <path d="m6 6 12 12M18 6 6 18"/>,
-    building: <><path d="M4 21V4h11v17M15 9h5v12M8 8h3M8 12h3M8 16h3M3 21h18"/></>,
-    card: <><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></>,
-    lock: <><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
-    mail: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></>,
-    eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></>,
-    upload: <><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v5h16v-5"/></>,
-    location: <><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2"/></>,
-    calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></>,
-    bookmark: <path d="M6 3h12v18l-6-4-6 4z"/>,
-    external: <><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v7H4V6h7"/></>,
-  };
-  return <svg aria-hidden="true" className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
-}
-
-function Button({ children, variant = "primary", icon, onClick, className = "", type = "button", disabled = false }: {
-  children: React.ReactNode; variant?: "primary" | "secondary" | "ghost" | "danger";
-  icon?: IconName; onClick?: React.MouseEventHandler<HTMLButtonElement>; className?: string; type?: "button" | "submit"; disabled?: boolean;
-}) {
-  return <button type={type} className={`btn btn-${variant} ${className}`} onClick={onClick} disabled={disabled}>{icon && <Icon name={icon} size={16}/>}<span>{children}</span></button>;
-}
-
-function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "success" | "warning" | "danger" | "info" | "neutral" }) {
-  return <span className={`badge badge-${tone}`}><span className="badge-dot"/>{children}</span>;
-}
 
 function Avatar({ initials, color = "blue", size = "md" }: { initials: string; color?: string; size?: "sm" | "md" | "lg" }) {
   return <span className={`avatar avatar-${color} avatar-${size}`}>{initials}</span>;
@@ -339,9 +291,9 @@ const campaigns: CampaignListItem[] = [
   { id: "5", title: "Finance Operations Analyst", department: "Finance", status: "Archived", applications: "54", published: "10 Jan 2025", color: "gray", location: "Cape Town", workArrangement: "Hybrid" },
 ];
 
-type CampaignRecruiter = { id: string; name: string; email: string; role: "Main recruiter" | "Additional recruiter" };
+type CampaignRecruiter = { id: string; name: string; email: string; role: "Main recruiter" | "Additional recruiter" | "Line manager" };
 type CampaignApprover = { name: string; email: string };
-type CampaignRequirement = { id: string; title: string; category: string; kind: "Must-have" | "Preferred"; weight: number };
+type CampaignRequirement = { id: string; title: string; category: string; kind: "Must-have" | "Preferred"; weight: number; value?: string };
 type CampaignEvaluationMode = "default" | "custom";
 
 type DemoCampaign = {
@@ -361,15 +313,15 @@ type DemoCampaign = {
   deleted?: boolean;
   closingDate?: string | null;
   statusChangeReason?: string;
+  slug?: string;
   formBlocks?: FormBlock[];
   campaignTeam?: CampaignRecruiter[];
   approver?: CampaignApprover | null;
   requirements?: CampaignRequirement[];
   evaluationMode?: CampaignEvaluationMode;
   evaluationInstructions?: string;
+  evaluationEnabled?: boolean;
 };
-
-type CampaignStatusAction = "pause" | "resume" | "close" | "publish" | "archive" | "closing-date";
 
 const campaignStorageKey = "recruitflow.demoCampaign";
 const createdCampaignsStorageKey = "recruitflow.demoCampaigns";
@@ -388,7 +340,11 @@ const defaultDemoCampaign: DemoCampaign = {
 };
 
 const defaultCampaignRequirements: CampaignRequirement[] = [
-  { id: "requirement-license", title: "Valid driving licence", category: "Skill", kind: "Must-have", weight: 5 },
+  { id: "requirement-experience", title: "Relevant experience", category: "Years of experience", kind: "Must-have", weight: 5, value: "3" },
+  { id: "requirement-qualification", title: "Required qualification", category: "Qualification", kind: "Must-have", weight: 4, value: "Degree or diploma in design" },
+  { id: "requirement-authorization", title: "Work authorization", category: "Custom (checked by a person)", kind: "Must-have", weight: 3, value: "" },
+  { id: "requirement-license", title: "Valid driving licence", category: "Licence", kind: "Must-have", weight: 3, value: "Code 08" },
+  { id: "requirement-communication", title: "Collaborative communication", category: "Skill", kind: "Preferred", weight: 2, value: "Works with design and engineering" },
 ];
 
 function getCampaignRequirements(campaign: DemoCampaign): CampaignRequirement[] {
@@ -419,7 +375,8 @@ function isDemoCampaign(value: unknown): value is DemoCampaign {
       (requirement.kind === "Must-have" || requirement.kind === "Preferred") && Number.isInteger(requirement.weight) && requirement.weight >= 1 && requirement.weight <= 5
     )) &&
     (campaign.evaluationMode === undefined || campaign.evaluationMode === "default" || campaign.evaluationMode === "custom") &&
-    (campaign.evaluationInstructions === undefined || typeof campaign.evaluationInstructions === "string");
+    (campaign.evaluationInstructions === undefined || typeof campaign.evaluationInstructions === "string") &&
+    (campaign.evaluationEnabled === undefined || typeof campaign.evaluationEnabled === "boolean");
 }
 
 function getCampaignRoleDescription(campaign: DemoCampaign): string {
@@ -576,28 +533,46 @@ function CampaignsPage() {
     return matchesTab && matchesSearch;
   });
   const totalApplications = allCampaigns.reduce((sum, campaign) => sum + (Number(campaign.applications) || 0), 0);
+  const tabCounts = {
+    "Active & Drafts": allCampaigns.filter(campaign => campaign.status === "Active" || campaign.status === "Paused" || campaign.status === "Draft").length,
+    Archived: allCampaigns.filter(campaign => campaign.status === "Archived").length,
+    Deleted: allCampaigns.filter(campaign => campaign.status === "Deleted").length,
+  };
+  const stats: Array<[string, number, string, IconName]> = [
+    ["Live campaigns", allCampaigns.filter(campaign => campaign.status === "Active").length, "Accepting applications now", "briefcase"],
+    ["Drafts & paused", allCampaigns.filter(campaign => campaign.status === "Draft" || campaign.status === "Paused").length, "Not visible to candidates", "clock"],
+    ["Applications", totalApplications, "Across all campaigns", "users"],
+    ["Qualifying", Math.round(totalApplications * .37), "Meet every must-have", "check"],
+  ];
+  const statusTone = (status: string) => status === "Active" ? "success" as const : status === "Draft" || status === "Paused" ? "warning" as const : status === "Deleted" ? "danger" as const : "neutral" as const;
   return <div className="campaigns-index">
-    <PageHeader eyebrow="Recruiter" title="Campaigns" description="Review live roles, then use tabs for drafts, archives, and trash." action={<Button icon="plus" onClick={() => go("/recruiter/campaigns/new")}>Create new campaign</Button>}/>
-    <label className="campaigns-index-search"><span>Search</span><span className="search"><Icon name="search"/><input aria-label="Search campaigns" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search by title, department, or location"/></span></label>
-    <section className="surface organisation-campaign-card">
-      <header className="campaigns-index-card-heading"><div><h2>All campaigns</h2><p>A list of all campaigns in your organisation.</p></div></header>
-      <div className="organisation-campaign-table-wrap"><table className="organisation-campaign-table"><thead><tr><th>Company</th><th>Campaign</th><th>Applied</th><th>Qualifying</th><th>Actions</th></tr></thead><tbody><tr>
-        <td><span className="organisation-cell"><span className="organisation-mark">N</span><strong>Your organisation</strong></span></td>
-        <td><span className="organisation-campaign-title"><strong>{allCampaigns.length} campaigns</strong><small>Northstar Labs · Hiring workspace</small></span></td>
-        <td>{totalApplications}</td><td>{Math.round(totalApplications * .37)}</td>
-        <td><Button variant="secondary" onClick={() => go("/recruiter/campaigns/1")}>Manage</Button></td>
-      </tr></tbody></table></div>
+    <PageHeader eyebrow="Recruiter · Northstar Labs" title="Campaigns" description="Create roles, follow every applicant through the pipeline and keep drafts, archives and deleted campaigns in one place." action={<Button icon="plus" onClick={() => go("/recruiter/campaigns/new")}>Create campaign</Button>}/>
+    <section className="campaigns-index-stats" aria-label="Campaign summary">
+      {stats.map(([label, value, hint, icon]) => <article className="campaigns-index-stat" key={label}>
+        <span className="campaigns-index-stat-icon"><Icon name={icon} size={18}/></span>
+        <div><span>{label}</span><strong>{value}</strong><small>{hint}</small></div>
+      </article>)}
     </section>
     <section className="surface campaigns-index-list-card">
-      <header className="campaigns-index-card-heading"><div><h2>Campaigns</h2><p>Switch tabs to see active roles, archived pipelines, or deleted items.</p></div></header>
-      <div className="campaigns-index-tabs" role="tablist" aria-label="Campaign status">
-        {(["Active & Drafts", "Archived", "Deleted"] as const).map(item => <button type="button" role="tab" aria-selected={tab === item} key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}
-      </div>
-      <p className="campaigns-index-list-description">{tab === "Active & Drafts" ? "Live, draft, and in-progress campaigns" : tab === "Archived" ? "Archived campaigns and their pipelines" : "Deleted campaigns in your organisation"}</p>
-      {visible.length ? <div className="campaigns-index-rows">{visible.map(campaign => <button type="button" className="campaign-index-row" key={campaign.id} onClick={() => go(`/recruiter/campaigns/${campaign.id}`)}>
-        <span className="campaign-index-row-main"><strong>{campaign.title}</strong><small>{campaign.status === "Draft" ? "Draft · Not published" : campaign.status === "Paused" ? "Paused · Not accepting applications" : `Updated ${campaign.published}`}</small></span>
-        <span className="campaign-index-row-badges"><Badge tone={campaign.status === "Active" ? "info" : campaign.status === "Draft" || campaign.status === "Paused" ? "warning" : "neutral"}>{campaign.status}</Badge>{campaign.status === "Active" && <Badge tone="success">Published</Badge>}</span>
-      </button>)}</div> : <div className="campaign-index-empty"><Icon name="briefcase" size={22}/><h3>{tab === "Deleted" ? "No deleted campaigns" : search ? "No matching campaigns" : "No campaigns in this tab"}</h3><p>{tab === "Deleted" ? "Deleted campaigns will appear here." : "Try another tab or search term."}</p></div>}
+      <header className="campaigns-index-toolbar">
+        <div className="campaigns-index-tabs" role="tablist" aria-label="Campaign status">
+          {(["Active & Drafts", "Archived", "Deleted"] as const).map(item => <button type="button" role="tab" aria-selected={tab === item} key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}<span className="campaigns-index-tab-count">{tabCounts[item]}</span></button>)}
+        </div>
+        <label className="campaigns-index-search"><span className="campaigns-index-search-label">Search campaigns</span><span className="search"><Icon name="search"/><input aria-label="Search campaigns" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search by title, department, or location"/></span></label>
+      </header>
+      <p className="campaigns-index-list-description">{tab === "Active & Drafts" ? "Live, draft and paused campaigns" : tab === "Archived" ? "Archived campaigns and their pipelines" : "Deleted campaigns in your organisation"} · {visible.length} shown</p>
+      {visible.length ? <div className="campaigns-index-rows">{visible.map(campaign => <article className="campaign-index-card" key={campaign.id}>
+        <button type="button" className="campaign-index-row" onClick={() => go(`/recruiter/campaigns/${campaign.id}`)} aria-label={`Open ${campaign.title}`}>
+          <span className={`campaign-index-mark tone-${campaign.color}`}>{campaign.title.split(" ").map(part => part[0]).slice(0, 2).join("").toUpperCase()}</span>
+          <span className="campaign-index-row-main">
+            <strong>{campaign.title}</strong>
+            <span className="campaign-index-meta"><span><Icon name="building" size={13}/>{campaign.department}</span><span><Icon name="location" size={13}/>{campaign.location}</span><span><Icon name="briefcase" size={13}/>{campaign.workArrangement}</span></span>
+          </span>
+          <span className="campaign-index-figures"><span><strong>{campaign.applications}</strong><small>Applications</small></span><span><strong>{campaign.status === "Draft" ? "—" : campaign.published}</strong><small>{campaign.status === "Draft" ? "Not published" : "Published"}</small></span></span>
+          <span className="campaign-index-row-badges"><Badge tone={statusTone(campaign.status)}>{campaign.status === "Active" ? "Live" : campaign.status}</Badge></span>
+          <span className="campaign-index-chevron"><Icon name="chevron" size={18}/></span>
+        </button>
+      </article>)}</div> : <div className="campaign-index-empty"><span><Icon name="briefcase" size={22}/></span><h3>{tab === "Deleted" ? "No deleted campaigns" : search ? "No matching campaigns" : "No campaigns in this tab"}</h3><p>{tab === "Deleted" ? "Deleted campaigns will appear here." : search ? "Try another search term or switch tabs." : "Create a campaign to start receiving applications."}</p>{tab === "Active & Drafts" && !search && <Button icon="plus" onClick={() => go("/recruiter/campaigns/new")}>Create campaign</Button>}</div>}
     </section>
   </div>;
 }
@@ -701,731 +676,30 @@ function CandidateReviewModal({ candidate, onClose, onStatusChange }: { candidat
 }
 
 function CampaignWorkspace({ campaignId }: { campaignId: string }) {
-  const [campaign, setCampaign] = useState(() => getCampaignDetails(campaignId));
-  const candidateState = useCampaignPipelineCandidates(campaignId);
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("Overview");
-  const [copyStatus, setCopyStatus] = useState("");
-  const [actionError, setActionError] = useState("");
-  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
-  const [statusAction, setStatusAction] = useState<CampaignStatusAction>("pause");
-  const [statusReason, setStatusReason] = useState("");
-  const [statusClosingDate, setStatusClosingDate] = useState("");
-  useEffect(() => setSelectedCandidateId(null), [campaignId]);
-  const [statusError, setStatusError] = useState("");
-  const tabs = ["Overview", "Pipeline", "Longlist", "Below requirements", "Shortlists", "References", "Offers", "Messages", "Export", "Rejected"];
-
+  const [campaign] = useState(() => getCampaignDetails(campaignId));
   if (!campaign) {
     return <section className="surface campaign-missing"><h1>Campaign not found</h1><p>This campaign may have been removed or is no longer available.</p><Button onClick={() => go("/recruiter/campaigns")}>Back to campaigns</Button></section>;
   }
-
-  const publicUrl = getPublicCampaignUrl(campaign.id);
-  const cleanDescription = getCampaignRoleDescription(campaign)
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const campaignListItem = campaigns.find(item => item.id === campaign.id);
-  const applicationCount = Number(campaignListItem?.applications) || 0;
-  const countCandidatesInStage = (stage: CandidateStage) => candidateState.candidates.filter(candidate => candidate.stage === stage).length;
-  const campaignRequirements = getCampaignRequirements(campaign);
-  const isClosingDatePassed = Boolean(campaign.closingDate && campaign.closingDate < new Date().toISOString().slice(0, 10));
-  const isAcceptingApplications = campaign.published && !campaign.paused && !campaign.archived && !isClosingDatePassed;
-  const statusDescription = campaign.deleted ? "deleted" : campaign.archived ? "archived" : campaign.paused ? "paused" : campaign.published ? "published" : "a draft";
-  const statusChoices: { value: CampaignStatusAction; title: string; description: string }[] = campaign.archived || campaign.deleted
-    ? [
-      { value: "publish", title: "Reopen", description: "Make the campaign available to candidates again." },
-      { value: "closing-date", title: "Change closing date", description: "The last day candidates can apply. Leave it blank for no end date." },
-    ]
-    : campaign.published
-      ? [
-        campaign.paused
-          ? { value: "resume", title: "Resume", description: "Candidates can apply to this campaign again." }
-          : { value: "pause", title: "Pause", description: "Candidates cannot apply while it is paused. You can reopen it later." },
-        { value: "close", title: "Close", description: "Candidates can no longer apply. The campaign moves to Archived." },
-        { value: "closing-date", title: "Change closing date", description: "The last day candidates can apply. Leave it blank for no end date." },
-      ]
-      : [
-        { value: "publish", title: "Publish", description: "Make the campaign visible to candidates." },
-        { value: "archive", title: "Archive", description: "Keep this draft out of the active campaigns list." },
-        { value: "closing-date", title: "Change closing date", description: "The last day candidates can apply. Leave it blank for no end date." },
-      ];
-  const openStatusDialog = () => {
-    setStatusAction(campaign.archived ? "publish" : campaign.published ? campaign.paused ? "resume" : "pause" : "publish");
-    setStatusReason("");
-    setStatusClosingDate(campaign.closingDate || "");
-    setStatusError("");
-    setStatusDialogOpen(true);
-  };
-  const saveStatusChange = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const reason = statusReason.trim();
-    if (!reason) {
-      setStatusError("Enter a reason to continue.");
-      return;
-    }
-
-    let next: DemoCampaign = { ...campaign, statusChangeReason: reason };
-    if (statusAction === "pause") next = { ...next, paused: true };
-    if (statusAction === "resume" || statusAction === "publish") {
-      next = { ...next, published: true, paused: false, archived: false, publishedAt: campaign.publishedAt || new Date().toISOString() };
-    }
-    if (statusAction === "close" || statusAction === "archive") {
-      next = { ...next, published: false, paused: false, archived: true };
-    }
-    if (statusAction === "closing-date") next = { ...next, closingDate: statusClosingDate || null };
-
-    const saved = campaign.id === "1" ? saveDemoCampaign(next) : saveCreatedCampaign(next);
-    if (!saved) {
-      setStatusError("Campaign status could not be saved in this browser. Please try again.");
-      return;
-    }
-    setCampaign(next);
-    setActionError("");
-    setStatusDialogOpen(false);
-  };
-  const copyPublicLink = async () => {
-    if (!navigator.clipboard) {
-      setCopyStatus("Clipboard access is unavailable. Select the link to copy it.");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(publicUrl);
-      setCopyStatus("Link copied.");
-    } catch (error) {
-      console.error("Could not copy the public campaign link.", error);
-      setCopyStatus("Could not copy the link. Select it to copy manually.");
-    }
-  };
-
-  return <section className="surface campaign-workspace">
-    <header className="campaign-workspace-header">
-      <button className="text-btn" onClick={() => go("/recruiter/campaigns")}>Back to campaigns</button>
-      <div className="campaign-manage-heading">
-        <div className="campaign-manage-copy">
-          <span className="eyebrow">Campaign overview</span>
-          <h1>{campaign.title || "Untitled campaign"}</h1>
-          <p>{cleanDescription || `${campaign.department || "Department not set"} · ${campaign.location || "Location not set"} · ${campaign.workArrangement || "Work arrangement not set"}`}</p>
-        </div>
-        <div className="campaign-manage-actions">
-          <div className="campaign-manage-status"><Badge tone={isAcceptingApplications ? "success" : campaign.archived || campaign.deleted ? "neutral" : "warning"}>{campaign.deleted ? "Deleted" : campaign.archived ? "Archived" : campaign.paused ? "Paused" : campaign.published ? "Published" : "Draft"}</Badge><Badge tone={isAcceptingApplications ? "success" : "neutral"}>{isAcceptingApplications ? "Visible to candidates" : campaign.published || campaign.archived || campaign.deleted ? "Not accepting applications" : "Not visible to candidates"}</Badge></div>
-          <div className="campaign-manage-buttons">
-            <Button variant="secondary" onClick={openStatusDialog}>Change status</Button>
-            <Button variant="secondary" onClick={() => go(`/recruiter/campaigns/${campaign.id}/edit`)}>Edit campaign &amp; form</Button>
-            <Button variant="secondary" onClick={() => go(`/recruiter/campaigns/${campaign.id}/bulk-upload`)}>Bulk upload CVs</Button>
-          </div>
-        </div>
-      </div>
-      {actionError && <p className="demo-storage-error" role="alert">{actionError}</p>}
-      {candidateState.error && <p className="demo-storage-error" role="alert">{candidateState.error}</p>}
-      <div className="campaign-summary-metrics">
-        <section className="campaign-public-link-card">
-          <span className="eyebrow">Public apply link</span>
-          <input aria-label="Public apply link" readOnly value={publicUrl}/>
-          <Button onClick={copyPublicLink}>{copyStatus === "Link copied." ? "Copied" : "Copy link"}</Button>
-          <Badge tone={isAcceptingApplications ? "success" : "warning"}>{isAcceptingApplications ? "Accepting applications" : "Not accepting applications"}</Badge>
-          <small>Created {campaignListItem?.published || "recently"} · Closing date {campaign.closingDate || "not set"}.</small>
-          {copyStatus && <span className="campaign-copy-status" role="status">{copyStatus}</span>}
-        </section>
-        {[["Applications", applicationCount, "count-blue"], ["Longlist", countCandidatesInStage("longlist"), "count-blue"], ["Proposed", countCandidatesInStage("shortlist-proposed"), "count-purple"], ["Approved", countCandidatesInStage("shortlist-approved"), "count-green"], ["Below requirements", countCandidatesInStage("below-requirements"), "count-red"]].map(([label, count, tone]) => <section className="campaign-count-card" key={label as string}>
-          <span className="eyebrow">{label}</span><strong className={tone as string}>{count}</strong>
-        </section>)}
-      </div>
-    </header>
-    <nav className="campaign-workspace-tabs" aria-label="Campaign sections">
-      {tabs.map(tab => <button key={tab} type="button" className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>)}
-    </nav>
-    <div className="campaign-workspace-content">
-      <CampaignWorkspaceTabContent tab={activeTab} campaign={campaign} candidateState={candidateState} selectedCandidateId={selectedCandidateId} onSelectCandidate={setSelectedCandidateId} onCloseCandidatePanel={() => setSelectedCandidateId(null)} onOpenTab={setActiveTab}/>
-      {statusDialogOpen && <div className="dialog-backdrop campaign-status-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setStatusDialogOpen(false); }}>
-        <form className="application-dialog campaign-status-dialog" role="dialog" aria-modal="true" aria-labelledby="campaign-status-title" onSubmit={saveStatusChange}>
-          <div className="campaign-status-body">
-            <header className="campaign-status-heading"><h2 id="campaign-status-title">Campaign status</h2><p>This campaign is <strong>{statusDescription}</strong>.</p></header>
-            <fieldset className="campaign-status-fieldset">
-              <legend>What do you want to do?</legend>
-              <div className="campaign-status-options">
-                {statusChoices.map(choice => <label className={`campaign-status-option${statusAction === choice.value ? " selected" : ""}`} key={choice.value}>
-                  <input type="radio" name="campaign-status-action" value={choice.value} checked={statusAction === choice.value} onChange={() => { setStatusAction(choice.value); setStatusError(""); }}/>
-                  <span className="campaign-status-option-copy"><strong>{choice.title}</strong><small>{choice.description}</small></span>
-                  {choice.value === "closing-date" && statusAction === "closing-date" && <span className="campaign-closing-date-input"><span>Closing date</span><input type="date" value={statusClosingDate} onChange={event => setStatusClosingDate(event.target.value)} aria-label="Closing date"/></span>}
-                </label>)}
-              </div>
-            </fieldset>
-            <label className="campaign-status-reason"><span>Reason (required)</span><textarea rows={3} value={statusReason} onChange={event => { setStatusReason(event.target.value); setStatusError(""); }} aria-required="true" aria-invalid={Boolean(statusError)} aria-describedby={statusError ? "campaign-status-error" : undefined}/></label>
-            {statusError && <p className="campaign-status-error" id="campaign-status-error" role="alert">{statusError}</p>}
-          </div>
-          <footer className="campaign-status-footer">
-            <Button variant="secondary" onClick={() => setStatusDialogOpen(false)}>Cancel</Button>
-            <Button type="submit">{statusAction === "pause" ? "Pause campaign" : statusAction === "resume" ? "Resume campaign" : statusAction === "close" ? "Close campaign" : statusAction === "publish" ? "Publish campaign" : statusAction === "archive" ? "Archive campaign" : "Save closing date"}</Button>
-          </footer>
-        </form>
-      </div>}
-    </div>
-  </section>;
-}
-
-function CampaignWorkspaceTabContent({ tab, campaign, candidateState, selectedCandidateId, onSelectCandidate, onCloseCandidatePanel, onOpenTab }: { tab: string; campaign: DemoCampaign; candidateState: CampaignPipelineCandidateController; selectedCandidateId: string | null; onSelectCandidate: (candidateId: string) => void; onCloseCandidatePanel: () => void; onOpenTab: (tab: string) => void }) {
-  const campaignRequirements = getCampaignRequirements(campaign);
-  const selectedCandidate = candidateState.candidates.find(candidate => candidate.id === selectedCandidateId) ?? null;
-  return <div className="campaign-tab-screen">
-    <span className="eyebrow">Campaign workspace</span>
-    <h2>{tab}</h2>
-    {tab === "Overview" && <div className="campaign-overview-grid">
-      <section className="campaign-overview-card"><span className="eyebrow">Screening progress</span><p>No applications yet. Results will show here as candidates apply.</p></section>
-      <section className="campaign-overview-card"><span className="eyebrow">Pending approvals</span><p>Nothing is waiting for approval.</p><button className="campaign-inline-link" onClick={() => onOpenTab("Offers")}>Go to approvals</button></section>
-      <section className="campaign-overview-card">
-        <span className="eyebrow">Requirements</span>
-        {campaignRequirements.length ? campaignRequirements.map(requirement => <div className="campaign-requirement" key={requirement.id}><span>{requirement.title} <small>· {requirement.category}</small></span><Badge>{requirement.kind} · {requirement.weight}</Badge></div>) : <p>No requirements have been added to this campaign yet.</p>}
-        <button className="campaign-inline-link" onClick={() => go(`/recruiter/campaigns/${campaign.id}/edit`)}>{campaignRequirements.length ? "Edit requirements" : "Add requirements"}</button>
-      </section>
-      <section className="campaign-overview-card"><span className="eyebrow">Recent activity</span><ul className="campaign-activity-list">{campaign.id === "1" ? <><li><span>Johnny Test campaign approver joined</span><small>Nov 3, 01:10 PM</small></li><li><span>Dave Sench campaign approver invited</span><small>Nov 3, 01:06 PM</small></li><li><span>Dave Sench campaign approver invite cancelled</span><small>Nov 3, 01:06 PM</small></li><li><span>Dave Sench campaign approver invited</span><small>Nov 3, 01:06 PM</small></li><li><span>Dave Sench updated the requirements (1 now)</span><small>Nov 3, 01:04 PM</small></li></> : <li><span>Campaign created</span><small>{campaign.publishedAt ? new Date(campaign.publishedAt).toLocaleString() : "Just now"}</small></li>}</ul></section>
-    </div>}
-    {tab === "Pipeline" && <CampaignPipelineScreen campaign={campaign} candidateState={candidateState} onSelectCandidate={onSelectCandidate}/>}
-    {["Longlist", "Below requirements", "Rejected"].includes(tab) && <CampaignApplicationTable tab={tab as CampaignCandidateTableTab} campaign={campaign} candidateState={candidateState} onSelectCandidate={onSelectCandidate}/>}
-    {tab === "Shortlists" && <CampaignShortlistsScreen/>}
-    {tab === "Messages" && <CampaignMessagesScreen/>}
-    {tab === "Export" && <CampaignExportScreen campaign={campaign} candidates={candidateState.candidates} candidateError={candidateState.error}/>}
-    {!["Overview", "Pipeline", "Longlist", "Below requirements", "Rejected", "Shortlists", "Messages", "Export"].includes(tab) && <section className="campaign-tab-empty"><h3>{tab}</h3><p>There is no {tab.toLowerCase()} activity for this campaign yet. Updates will appear here as candidates move through the hiring process.</p></section>}
-    {selectedCandidate && <CampaignCandidatePanel candidate={selectedCandidate} campaign={campaign} onClose={onCloseCandidatePanel} onOverride={candidateState.overrideBelowRequirements} onCorrect={candidateState.correctScreeningResult} onUndo={candidateState.undoScreeningCorrection}/>}
-  </div>;
-}
-
-type CampaignCandidateTableTab = "Longlist" | "Below requirements" | "Rejected";
-type CampaignPipelineCandidateState = { candidates: CampaignCandidate[]; error: string | null };
-type CampaignPipelineCandidateController = CampaignPipelineCandidateState & {
-  moveCandidate: (candidateId: string, stage: CandidateStage) => void;
-  overrideBelowRequirements: (candidateId: string) => void;
-  correctScreeningResult: (candidateId: string, requirement: CandidateScreeningRequirement, result: ScreeningCorrectionResult, note: string) => boolean;
-  undoScreeningCorrection: (candidateId: string, requirement: string) => boolean;
-};
-
-function useCampaignPipelineCandidates(campaignId: string): CampaignPipelineCandidateController {
-  const [state, setState] = useState<CampaignPipelineCandidateState>(() => loadCampaignCandidates(campaignId));
-  useEffect(() => setState(loadCampaignCandidates(campaignId)), [campaignId]);
-  const updateCandidate = (candidateId: string, update: (candidate: CampaignCandidate) => CampaignCandidate) => {
-    const currentCandidate = state.candidates.find(candidate => candidate.id === candidateId);
-    if (!currentCandidate) return false;
-    const updatedCandidate = update(currentCandidate);
-    if (updatedCandidate === currentCandidate) return false;
-    const candidates = state.candidates.map(candidate => candidate.id === candidateId ? updatedCandidate : candidate);
-    const error = saveCampaignCandidates(campaignId, candidates);
-    setState({ candidates: error ? state.candidates : candidates, error });
-    return error === null;
-  };
-  const moveToStage = (candidate: CampaignCandidate, stage: CandidateStage): CampaignCandidate => {
-    if (candidate.stage === stage) return candidate;
-    const stageHistory = [...new Set([...(candidate.stageHistory ?? [candidate.stage]), stage])];
-    const shortlistDecision = stage === "shortlist-approved"
-      ? "Approved"
-      : stage === "shortlist-proposed"
-        ? candidate.shortlistDecision ?? "Pending"
-        : candidate.shortlistDecision;
-    return { ...candidate, stage, stageHistory, shortlistDecision };
-  };
-  const moveCandidate = (candidateId: string, stage: CandidateStage) => updateCandidate(candidateId, candidate => {
-    if (candidate.overriddenByRecruiter && stage === "below-requirements") return candidate;
-    return moveToStage(candidate, stage);
-  });
-  const overrideBelowRequirements = (candidateId: string) => updateCandidate(candidateId, candidate => {
-    if (candidate.stage !== "below-requirements" || candidate.overriddenByRecruiter) return candidate;
-    return { ...moveToStage(candidate, "longlist"), overriddenByRecruiter: true };
-  });
-  const correctScreeningResult = (candidateId: string, requirement: CandidateScreeningRequirement, result: ScreeningCorrectionResult, note: string) => {
-    const key = getScreeningRequirementKey(requirement.requirement);
-    if (!note.trim()) return false;
-    return updateCandidate(candidateId, candidate => {
-      if (candidate.screeningCorrections?.[key]) return candidate;
-      return {
-        ...candidate,
-        screeningCorrections: {
-          ...candidate.screeningCorrections,
-          [key]: {
-            result,
-            note: note.trim(),
-            who: "Sophie Okafor",
-            correctedAt: new Date().toISOString(),
-            originalResult: requirement.result,
-            originalReason: requirement.reason,
-            originalSource: requirement.source,
-          },
-        },
-      };
-    });
-  };
-  const undoScreeningCorrection = (candidateId: string, requirement: string) => updateCandidate(candidateId, candidate => {
-    const key = getScreeningRequirementKey(requirement);
-    const corrections = { ...candidate.screeningCorrections };
-    if (!corrections[key]) return candidate;
-    delete corrections[key];
-    return { ...candidate, screeningCorrections: Object.keys(corrections).length ? corrections : undefined };
-  });
-  return { ...state, moveCandidate, overrideBelowRequirements, correctScreeningResult, undoScreeningCorrection };
-}
-
-function getCampaignScreeningData(candidate: CampaignCandidate, campaign: DemoCampaign): CandidateScreeningData {
-  const screening = getCandidateScreeningData(candidate);
-  const campaignRequirements = getCampaignRequirements(campaign);
-  const requirements = campaignRequirements.map((campaignRequirement, index) => {
-    const result = screening.requirements.find(item => item.requirement.toLowerCase() === campaignRequirement.title.toLowerCase());
-    if (result) return { ...result, mustHave: campaignRequirement.kind === "Must-have" };
-    const demoResult = candidate.mustHaveResults.find(item => item.requirement.toLowerCase() === campaignRequirement.title.toLowerCase()) ?? candidate.mustHaveResults[index];
-    return {
-      requirement: campaignRequirement.title,
-      result: demoResult?.met ? "Met" as const : "Not met" as const,
-      reason: demoResult?.met ? "The application shows evidence for this requirement." : "The application does not provide evidence that meets this requirement.",
-      source: "Set by a recruiter" as const,
-      mustHave: campaignRequirement.kind === "Must-have",
-    };
-  });
-  const supplementalRequirements = screening.requirements
-    .filter(item => !campaignRequirements.some(requirement => requirement.title.toLowerCase() === item.requirement.toLowerCase()))
-    .map(item => ({ ...item, mustHave: false }));
-  const correctedRequirements = [...requirements, ...supplementalRequirements].map(requirement => {
-    const correction = candidate.screeningCorrections?.[getScreeningRequirementKey(requirement.requirement)];
-    return correction ? { ...requirement, result: correction.result, reason: correction.note, source: "Set by a recruiter" as const, correction } : requirement;
-  });
-  return { ...screening, requirements: correctedRequirements };
-}
-
-function getMustHaveSummary(candidate: CampaignCandidate, campaign: DemoCampaign) {
-  const results = getCampaignScreeningData(candidate, campaign).requirements.filter(result => result.mustHave);
-  const met = results.filter(result => result.result === "Met").length;
-  const failed = results.find(result => result.result === "Not met")?.requirement;
-  return { met, total: results.length, failed };
-}
-
-function CandidateStageMoveMenu({ candidate, onMove, onOverride }: { candidate: CampaignCandidate; onMove: (candidateId: string, stage: CandidateStage) => void; onOverride: (candidateId: string) => void }) {
-  return <label className="campaign-stage-move">
-    <span>Move to</span>
-    <select aria-label={`Move ${candidate.name} to another stage`} value="" onChange={event => {
-      if (!event.target.value) return;
-      const stage = event.target.value as CandidateStage;
-      if (candidate.stage === "below-requirements" && stage === "longlist") onOverride(candidate.id);
-      else onMove(candidate.id, stage);
-    }}>
-      <option value="">Choose stage</option>
-      {campaignPipelineStages.filter(stage => stage.id !== candidate.stage &&
-        !(candidate.stage === "below-requirements" && stage.id === "longlist") &&
-        !(candidate.overriddenByRecruiter && stage.id === "below-requirements")).map(stage => <option value={stage.id} key={stage.id}>{stage.title}</option>)}
-    </select>
-  </label>;
-}
-
-type CampaignCandidatePanelTab = "Overview" | "Evaluation" | "Decision" | "Download Results";
-
-function CampaignCandidatePanel({ candidate, campaign, onClose, onOverride, onCorrect, onUndo }: { candidate: CampaignCandidate; campaign: DemoCampaign; onClose: () => void; onOverride: CampaignPipelineCandidateController["overrideBelowRequirements"]; onCorrect: CampaignPipelineCandidateController["correctScreeningResult"]; onUndo: CampaignPipelineCandidateController["undoScreeningCorrection"] }) {
-  const [tab, setTab] = useState<CampaignCandidatePanelTab>("Overview");
-  const screening = getCampaignScreeningData(candidate, campaign);
-  const stageTitle = campaignPipelineStages.find(stage => stage.id === candidate.stage)?.title ?? candidate.stage;
-  const mustHaves = screening.requirements.filter(requirement => requirement.mustHave);
-  const mustHavesMet = mustHaves.filter(requirement => requirement.result === "Met").length;
-  const needsVerification = screening.requirements.some(requirement => requirement.result === "Needs verification");
-  const statusText = screening.status === "in-progress" ? "Screening…" : screening.status === "failed" ? "Screening failed" : needsVerification ? "Needs verification" : "Screening complete";
-  const statusTone = screening.status === "complete" && needsVerification ? "needs-verification" : screening.status;
-  const tabNames: CampaignCandidatePanelTab[] = ["Overview", "Evaluation", "Decision", "Download Results"];
-  const downloadResults = () => {
-    const lines = [
-      `Candidate: ${candidate.name}`,
-      `Campaign: ${campaign.title}`,
-      `Requirements score: ${candidate.requirementsScore}%`,
-      `AI fit: ${candidate.aiFitScore}%`,
-      `Stage: ${stageTitle}`,
-      `Screening status: ${statusText}`,
-      "",
-      ...screening.requirements.flatMap(requirement => [
-        `${requirement.requirement} — ${requirement.result}${requirement.mustHave ? " (Must-have)" : " (Preferred)"}`,
-        `Reason: ${requirement.reason}`,
-        `Source: ${requirement.source}`,
-        "",
-      ]),
-      screening.error ? `Screening note: ${screening.error}` : "",
-    ].filter(Boolean);
-    const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${candidate.id}-screening-results.txt`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onClose]);
-  return createPortal(<div className="campaign-candidate-panel-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <aside className="campaign-candidate-panel" role="dialog" aria-modal="true" aria-labelledby="campaign-candidate-panel-title">
-      <header className="campaign-candidate-panel-header">
-        <div><h2 id="campaign-candidate-panel-title">{candidate.name}</h2><p>{campaign.title}</p><small>{candidate.email}</small></div>
-        <button className="icon-btn" type="button" onClick={onClose} aria-label="Close candidate panel"><Icon name="close"/></button>
-      </header>
-      <section className="campaign-candidate-panel-profile">
-        <span className="eyebrow">Candidate profile</span>
-        <div className="campaign-candidate-panel-badges">
-          <span className="campaign-panel-score">Requirements score {candidate.requirementsScore}%</span>
-          <span className="campaign-panel-score">AI fit {candidate.aiFitScore}%</span>
-          <span className={`campaign-panel-screening-state ${statusTone}`}>{statusText}</span>
-          {candidate.stage === "below-requirements" && !candidate.overriddenByRecruiter && <span className="campaign-override-badge screening-origin">Moved by screening</span>}
-          {candidate.overriddenByRecruiter && <span className="campaign-override-badge">Overridden by recruiter</span>}
-        </div>
-        {candidate.stage === "below-requirements" && !candidate.overriddenByRecruiter && <Button variant="secondary" className="campaign-panel-override-action" onClick={() => onOverride(candidate.id)}>Move to Longlist</Button>}
-        <div className="campaign-panel-must-have-summary"><strong>Must-have criteria</strong><span>{mustHavesMet}/{mustHaves.length} met</span></div>
-      </section>
-      <nav className="campaign-candidate-panel-tabs" role="tablist" aria-label="Candidate screening tabs">
-        {tabNames.map(item => <button key={item} type="button" role="tab" id={`campaign-candidate-tab-${item.toLowerCase().replace(/\s+/g, "-")}`} aria-selected={tab === item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}
-      </nav>
-      <div className="campaign-candidate-panel-body" role="tabpanel" aria-labelledby={`campaign-candidate-tab-${tab.toLowerCase().replace(/\s+/g, "-")}`}>
-        {tab === "Overview" && <div className="campaign-candidate-panel-section">
-          <CampaignScreeningStatusBanner screening={screening}/>
-          <div className="campaign-panel-score-card"><span>Requirements score</span><strong>{candidate.requirementsScore}%</strong><div><i style={{ width: `${candidate.requirementsScore}%` }}/></div><small>Based on the screening requirements below.</small></div>
-          <CampaignScreeningRequirements candidateId={candidate.id} requirements={screening.requirements} onCorrect={onCorrect} onUndo={onUndo}/>
-        </div>}
-        {tab === "Evaluation" && <div className="campaign-candidate-panel-section">
-          <CampaignScreeningStatusBanner screening={screening}/>
-          <div className="campaign-panel-evaluation-scores"><div><span>Requirements score</span><strong>{candidate.requirementsScore}%</strong></div><div><span>AI fit</span><strong>{candidate.aiFitScore}%</strong></div><div><span>Must-haves met</span><strong>{mustHavesMet}/{mustHaves.length}</strong></div></div>
-          <CampaignScreeningRequirements candidateId={candidate.id} requirements={screening.requirements} onCorrect={onCorrect} onUndo={onUndo}/>
-        </div>}
-        {tab === "Decision" && <section className="campaign-candidate-panel-card">
-          <h3>Current candidate stage</h3>
-          <p>The pipeline stage is shown with the screening evidence so recruiters can understand the candidate’s current position.</p>
-          <div className="campaign-panel-decision-stage"><span>Stage</span><strong>{stageTitle}</strong></div>
-          <div className="campaign-panel-decision-stage"><span>Screening</span><strong>{statusText}</strong></div>
-          <div className="campaign-panel-decision-stage"><span>Must-haves met</span><strong>{mustHavesMet} of {mustHaves.length}</strong></div>
-          <small>Candidate stage changes are mock interactions and are not submitted to a hiring backend.</small>
-        </section>}
-        {tab === "Download Results" && <section className="campaign-candidate-panel-card campaign-panel-download">
-          <span className="campaign-panel-download-icon"><Icon name="file" size={23}/></span>
-          <h3>Download screening results</h3>
-          <p>Save {candidate.name}’s screening score, requirement results, reasons and sources as a text report.</p>
-          {screening.error && <p className="campaign-screening-error">{screening.error}</p>}
-          <Button icon="file" onClick={downloadResults}>Download results</Button>
-        </section>}
-      </div>
-      <footer className="campaign-candidate-panel-footer"><Button variant="secondary" onClick={onClose}>Close</Button></footer>
-    </aside>
-  </div>, document.body);
-}
-
-function CampaignScreeningStatusBanner({ screening }: { screening: CandidateScreeningData }) {
-  const title = screening.status === "in-progress" ? "Screening…" : screening.status === "failed" ? "Screening failed" : "Screening complete";
-  const description = screening.status === "in-progress"
-    ? "Screening is still running. These results may change when all checks finish."
-    : screening.status === "failed"
-      ? screening.error ?? "Screening could not be completed. Review the partial results with care."
-      : "Review the evidence, reason and source for each requirement.";
-  return <div className={`campaign-screening-status-banner ${screening.status}`} role="status"><strong>{title}</strong><p>{description}</p></div>;
-}
-
-function CampaignScreeningRequirements({ candidateId, requirements, onCorrect, onUndo }: { candidateId: string; requirements: CandidateScreeningRequirement[]; onCorrect: CampaignPipelineCandidateController["correctScreeningResult"]; onUndo: CampaignPipelineCandidateController["undoScreeningCorrection"] }) {
-  const [draft, setDraft] = useState<{ requirement: string; result: ScreeningCorrectionResult; note: string } | null>(null);
-  const [correctionError, setCorrectionError] = useState("");
-  const startCorrection = (requirement: string, result: ScreeningCorrectionResult) => {
-    setDraft({ requirement, result, note: "" });
-    setCorrectionError("");
-  };
-  const submitCorrection = (event: React.FormEvent<HTMLFormElement>, requirement: CandidateScreeningRequirement) => {
-    event.preventDefault();
-    if (!draft?.note.trim()) {
-      setCorrectionError("A note is required to save this correction.");
-      return;
-    }
-    if (!onCorrect(candidateId, requirement, draft.result, draft.note)) {
-      setCorrectionError("The correction could not be saved. Please try again.");
-      return;
-    }
-    setDraft(null);
-    setCorrectionError("");
-  };
-  const undoCorrection = (requirement: string) => {
-    if (!onUndo(candidateId, requirement)) {
-      setCorrectionError("The correction could not be undone. Please try again.");
-      return;
-    }
-    setCorrectionError("");
-  };
-  return <section className="campaign-screening-requirements">
-    <h3>Requirement results</h3>
-    {requirements.map((requirement, index) => <article className="campaign-screening-requirement" key={`${requirement.requirement}-${index}`}>
-      <header><h4>{requirement.requirement}</h4><div>
-        <span className={`campaign-screening-result ${requirement.result.toLowerCase().replace(/\s+/g, "-")}`}>{requirement.result}</span>
-        <span className={`campaign-screening-requirement-kind ${requirement.mustHave ? "must-have" : "preferred"}`}>{requirement.mustHave ? "Must-have" : "Preferred"}</span>
-      </div></header>
-      <p>{requirement.reason}</p>
-      <small><span>Where it came from</span>{requirement.source}</small>
-      {requirement.correction ? <div className="campaign-screening-correction">
-        <div className="campaign-screening-correction-note"><strong>Correction note</strong><p>{requirement.correction.note}</p><small>{requirement.correction.who} · {new Date(requirement.correction.correctedAt).toLocaleString()}</small></div>
-        <div className="campaign-screening-original"><strong>Original screening answer</strong><span className={`campaign-screening-result ${requirement.correction.originalResult.toLowerCase().replace(/\s+/g, "-")}`}>{requirement.correction.originalResult}</span><p>{requirement.correction.originalReason}</p><small>Source: {requirement.correction.originalSource}</small></div>
-        <button type="button" className="campaign-screening-undo" onClick={() => undoCorrection(requirement.requirement)}>Undo correction</button>
-      </div> : <div className="campaign-screening-correction-actions">
-        <button type="button" disabled={requirement.result === "Met"} onClick={() => startCorrection(requirement.requirement, "Met")}>Mark as met</button>
-        <button type="button" disabled={requirement.result === "Not met"} onClick={() => startCorrection(requirement.requirement, "Not met")}>Mark as not met</button>
-      </div>}
-      {draft?.requirement === requirement.requirement && <form className="campaign-screening-correction-form" onSubmit={event => submitCorrection(event, requirement)}>
-        <strong>Correct this result to “{draft.result}”</strong>
-        <label>Recruiter note<textarea required value={draft.note} onChange={event => { setDraft(current => current ? { ...current, note: event.target.value } : current); setCorrectionError(""); }} placeholder="Explain why the screening result should change."/></label>
-        <small>A note is required before this correction can be saved.</small>
-        {correctionError && <p role="alert">{correctionError}</p>}
-        <div><button type="button" onClick={() => { setDraft(null); setCorrectionError(""); }}>Cancel</button><button type="submit" disabled={!draft.note.trim()}>Save correction</button></div>
-      </form>}
-    </article>)}
-    {correctionError && !draft && <p className="campaign-screening-correction-error" role="alert">{correctionError}</p>}
-  </section>;
-}
-
-function CampaignPipelineScreen({ campaign, candidateState, onSelectCandidate }: { campaign: DemoCampaign; candidateState: CampaignPipelineCandidateController; onSelectCandidate: (candidateId: string) => void }) {
-  const { candidates, moveCandidate, overrideBelowRequirements } = candidateState;
-  return <section className="campaign-pipeline-screen">
-    <p className="campaign-screen-description">Review candidates across the campaign stages. Use each candidate’s move menu to update their stage.</p>
-    <div className="campaign-pipeline-scroll" aria-label="Candidate pipeline">
-      <div className="campaign-pipeline-grid">{campaignPipelineStages.map(stage => {
-        const stageCandidates = candidates.filter(candidate => candidate.stage === stage.id);
-        return <section className="campaign-pipeline-stage" key={stage.id}>
-          <header><div><h3>{stage.title}</h3><p>{stage.description}</p></div><span className="campaign-stage-count">{stageCandidates.length}</span></header>
-          {stageCandidates.length ? <div className="campaign-pipeline-candidates">{stageCandidates.map(candidate => {
-            const mustHaves = getMustHaveSummary(candidate, campaign);
-            return <article className="campaign-pipeline-candidate" key={candidate.id}>
-              <div className="campaign-pipeline-candidate-top"><span className="campaign-candidate-avatar">{candidate.name.split(" ").map(part => part[0]).slice(0, 2).join("")}</span><span className="campaign-candidate-score">Requirements {candidate.requirementsScore}%</span></div>
-              <button type="button" className="campaign-candidate-profile-button" onClick={() => onSelectCandidate(candidate.id)}><strong>{candidate.name}</strong><small>{candidate.email}</small></button>
-              {candidate.stage === "below-requirements" && !candidate.overriddenByRecruiter && <span className="campaign-override-badge screening-origin">Moved by screening</span>}
-              {candidate.overriddenByRecruiter && <span className="campaign-override-badge">Overridden by recruiter</span>}
-              <div className="campaign-candidate-must-haves"><strong>{mustHaves.met} of {mustHaves.total} must-haves</strong><span>met</span></div>
-              {mustHaves.failed && <p className="campaign-candidate-failed"><strong>Failed must-have:</strong> {mustHaves.failed}</p>}
-              <p className="campaign-candidate-ai-fit">AI fit <strong>{candidate.aiFitScore}%</strong></p>
-              {candidate.stage === "below-requirements" && !candidate.overriddenByRecruiter && <Button variant="secondary" className="campaign-override-action" onClick={() => overrideBelowRequirements(candidate.id)}>Move to Longlist</Button>}
-              <CandidateStageMoveMenu candidate={candidate} onMove={moveCandidate} onOverride={overrideBelowRequirements}/>
-            </article>;
-          })}</div> : <div className="campaign-pipeline-empty">No candidates in this stage.</div>}
-        </section>;
-      })}</div>
-    </div>
-  </section>;
-}
-
-const campaignCandidateTableColumns = ["Name", "Applied", "Score", "Must-haves", "AI fit", "Status"];
-
-function CampaignApplicationTable({ tab, campaign, candidateState, onSelectCandidate }: { tab: CampaignCandidateTableTab; campaign: DemoCampaign; candidateState: CampaignPipelineCandidateController; onSelectCandidate: (candidateId: string) => void }) {
-  const { candidates, moveCandidate, overrideBelowRequirements } = candidateState;
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [columnsOpen, setColumnsOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const [qualification, setQualification] = useState("All candidates");
-  const [minimumScore, setMinimumScore] = useState("0");
-  const [pageSize, setPageSize] = useState(5);
-  const [page, setPage] = useState(1);
-  const [visibleColumns, setVisibleColumns] = useState<string[]>(campaignCandidateTableColumns);
-  const stageId: CandidateStage = tab === "Longlist" ? "longlist" : tab === "Below requirements" ? "below-requirements" : "rejected";
-  const stageCandidates = candidates.filter(candidate => candidate.stage === stageId);
-  const filteredCandidates = stageCandidates.filter(candidate => {
-    const mustHaves = getMustHaveSummary(candidate, campaign);
-    const query = search.trim().toLowerCase();
-    const matchesSearch = !query || candidate.name.toLowerCase().includes(query) || candidate.email.toLowerCase().includes(query);
-    const matchesQualification = qualification === "All candidates" ||
-      (qualification === "Meets all must-haves" ? mustHaves.met === mustHaves.total : mustHaves.met < mustHaves.total);
-    return matchesSearch && matchesQualification && candidate.requirementsScore >= Number(minimumScore);
-  });
-  const pageCount = Math.max(1, Math.ceil(filteredCandidates.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const pageCandidates = filteredCandidates.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const isFiltered = Boolean(search.trim()) || qualification !== "All candidates" || minimumScore !== "0";
-  const average = (values: number[]) => values.length ? `${Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)}%` : "—";
-  useEffect(() => setPage(1), [tab, search, qualification, minimumScore, pageSize]);
-  useEffect(() => setPage(current => Math.min(current, pageCount)), [pageCount]);
-  const getCellValue = (column: string, candidate: CampaignCandidate) => {
-    const mustHaves = getMustHaveSummary(candidate, campaign);
-    switch (column) {
-      case "Name": return <button type="button" className="campaign-table-profile-trigger" onClick={() => onSelectCandidate(candidate.id)}><strong>{candidate.name}</strong><small>{candidate.email}</small></button>;
-      case "Applied": return new Date(candidate.appliedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-      case "Score": return `${candidate.requirementsScore}%`;
-      case "Must-haves": return `${mustHaves.met} of ${mustHaves.total}`;
-      case "AI fit": return `${candidate.aiFitScore}%`;
-      case "Status": return <div className="campaign-table-stage-status"><span>{campaignPipelineStages.find(stage => stage.id === candidate.stage)?.title ?? candidate.stage}</span>{candidate.stage === "below-requirements" && !candidate.overriddenByRecruiter && <small className="campaign-override-badge screening-origin">Moved by screening</small>}{candidate.overriddenByRecruiter && <small className="campaign-override-badge">Overridden by recruiter</small>}</div>;
-      default: return null;
-    }
-  };
-  return <section className={`campaign-applications-card campaign-applications-${tab.toLowerCase().replace(/\s+/g, "-")}`}>
-    <header className="campaign-applications-header">
-      <div><h3>{tab === "Rejected" ? "Rejected candidates" : `${tab} candidates`}</h3><p>{tab === "Longlist" ? "Candidates currently in the longlist, including their requirements and AI fit scores." : tab === "Below requirements" ? "Candidates who do not meet one or more campaign must-have requirements." : "Candidates whose application was rejected."}</p><small>{filteredCandidates.length} shown · {stageCandidates.length} total in this stage</small></div>
-      <div className="campaign-table-tools">
-        <Button variant="secondary" icon="filter" onClick={() => { setFiltersOpen(value => !value); setColumnsOpen(false); }}>Filters</Button>
-        <Button variant="secondary" icon="file" onClick={() => { setColumnsOpen(value => !value); setFiltersOpen(false); }}>Columns</Button>
-      </div>
-    </header>
-    {filtersOpen && <div className="campaign-table-popover">
-      <label>Search candidates<input value={search} onChange={event => setSearch(event.target.value)} placeholder="Name or email"/></label>
-      <label>Must-haves<select value={qualification} onChange={event => setQualification(event.target.value)}><option>All candidates</option><option>Meets all must-haves</option><option>Has unmet must-have</option></select></label>
-      <label>Minimum score<select value={minimumScore} onChange={event => setMinimumScore(event.target.value)}><option value="0">Any score</option><option value="70">70% or higher</option><option value="85">85% or higher</option></select></label>
-      <Button variant="ghost" onClick={() => { setSearch(""); setQualification("All candidates"); setMinimumScore("0"); }}>Clear filters</Button>
-    </div>}
-    {columnsOpen && <div className="campaign-table-popover campaign-column-options"><strong>Visible columns</strong>{campaignCandidateTableColumns.map(column => <label key={column}><input type="checkbox" checked={visibleColumns.includes(column)} onChange={() => setVisibleColumns(current => current.includes(column) ? current.filter(item => item !== column) : [...current, column])}/>{column}</label>)}</div>}
-    <div className="campaign-candidate-totals">
-      <span><strong>{stageCandidates.length}</strong> total candidates</span>
-      <span><strong>{average(stageCandidates.map(candidate => candidate.requirementsScore))}</strong> average requirements score</span>
-      <span><strong>{average(stageCandidates.map(candidate => candidate.aiFitScore))}</strong> average AI fit</span>
-    </div>
-    <div className="campaign-candidate-table-wrap"><table className="campaign-candidate-table">
-      <thead><tr>{campaignCandidateTableColumns.filter(column => visibleColumns.includes(column)).map(column => <th key={column}>{column}</th>)}<th>Actions</th></tr></thead>
-      <tbody>{pageCandidates.length ? pageCandidates.map(candidate => <tr key={candidate.id}>
-        {campaignCandidateTableColumns.filter(column => visibleColumns.includes(column)).map(column => <td key={column}>{getCellValue(column, candidate)}</td>)}
-        <td><div className="campaign-table-stage-actions">{candidate.stage === "below-requirements" && !candidate.overriddenByRecruiter && <Button variant="secondary" className="campaign-override-action" onClick={() => overrideBelowRequirements(candidate.id)}>Move to Longlist</Button>}<CandidateStageMoveMenu candidate={candidate} onMove={moveCandidate} onOverride={overrideBelowRequirements}/></div></td>
-      </tr>) : <tr><td colSpan={Math.max(1, visibleColumns.length + 1)}><div className="campaign-candidate-empty"><strong>{isFiltered ? "No candidates match these filters" : `No candidates in ${tab.toLowerCase()}`}</strong><p>{isFiltered ? "Try changing or clearing the filters to see more candidates." : "Candidates moved into this stage will appear here. This empty state will update automatically when candidates are added."}</p></div></td></tr>}</tbody>
-    </table></div>
-    <footer className="campaign-table-pagination">
-      <span>{filteredCandidates.length ? `Showing ${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filteredCandidates.length)} of ${filteredCandidates.length}` : "Showing 0 candidates"}</span>
-      <label>Rows per page<select value={pageSize} onChange={event => setPageSize(Number(event.target.value))}><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option></select></label>
-      <div><Button variant="secondary" disabled={currentPage <= 1} onClick={() => setPage(current => Math.max(1, current - 1))}>Previous</Button><span>Page {currentPage} of {pageCount}</span><Button variant="secondary" disabled={currentPage >= pageCount} onClick={() => setPage(current => Math.min(pageCount, current + 1))}>Next</Button></div>
-    </footer>
-  </section>;
-}
-
-function CampaignShortlistsScreen() {
-  const [view, setView] = useState<"side-by-side" | "overlap">("side-by-side");
-  const [showTop, setShowTop] = useState("5");
-  const [proposalStatus, setProposalStatus] = useState("All statuses");
-  return <section className="campaign-shortlists-screen">
-    <div className="campaign-shortlist-toolbar">
-      <div className="campaign-shortlist-view" role="group" aria-label="Shortlist comparison view">
-        <button type="button" className={view === "side-by-side" ? "active" : ""} onClick={() => setView("side-by-side")}>Side by side</button>
-        <button type="button" className={view === "overlap" ? "active" : ""} onClick={() => setView("overlap")}>Overlap</button>
-      </div>
-      <label>Show top<select value={showTop} onChange={event => setShowTop(event.target.value)}><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label>
-    </div>
-    <div className={`campaign-shortlist-columns ${view === "overlap" ? "overlap" : ""}`}>
-      <section className="campaign-shortlist-list"><header><h3>Requirements shortlist</h3><span>Your criteria</span></header><p>Weighted by the must haves you set. Preferred criteria break ties.</p><div className="campaign-shortlist-empty">No candidates match your campaign requirements yet.</div></section>
-      <section className="campaign-shortlist-list"><header><h3>AI shortlist</h3><span>Fit score</span></header><p>Ranked by the same fit score shown on every application.</p><div className="campaign-shortlist-empty">No candidates are available to rank yet.</div></section>
-    </div>
-    {view === "overlap" && <p className="campaign-shortlist-overlap-note">Overlap shows candidates who appear in both the requirements and AI shortlists.</p>}
-    <div className="campaign-propose-row"><p>Pick from either list. They become one proposed shortlist, which still goes to a line manager for a decision.</p><Button disabled>Propose 0 selected</Button></div>
-    <div className="campaign-proposals-header"><h3>Proposals</h3><select aria-label="Proposal status" value={proposalStatus} onChange={event => setProposalStatus(event.target.value)}><option>All statuses</option><option>Pending</option><option>Approved</option><option>Returned</option><option>Withdrawn</option></select></div>
-    <div className="campaign-proposals-empty">No information found</div>
-  </section>;
-}
-
-type CampaignMessageTemplate = { stage: string; subject: string; body: string; autoSend: boolean };
-
-function CampaignMessagesScreen() {
-  const [templates, setTemplates] = useState<CampaignMessageTemplate[]>([
-    { stage: "Application received", subject: "We received your application", body: "Thanks for applying. Our team will review your application and share an update soon.", autoSend: true },
-    { stage: "Shortlisted", subject: "You have been shortlisted", body: "We are pleased to let you know that your application has progressed to the next stage.", autoSend: false },
-    { stage: "Reference checks", subject: "Reference checks", body: "We would like to begin reference checks as the next step in your application.", autoSend: false },
-    { stage: "Job offer", subject: "An offer from Northstar Labs", body: "We are pleased to share an offer for this role. Our team will follow up with the details.", autoSend: false },
-    { stage: "Application outcome", subject: "An update on your application", body: "Thank you for taking the time to apply. We will share an update about your application here.", autoSend: false },
-  ]);
-  const [activeTemplate, setActiveTemplate] = useState<number | null>(null);
-  const [showQueue, setShowQueue] = useState("All");
-  const [messageStatus, setMessageStatus] = useState("");
-  const template = activeTemplate === null ? null : templates[activeTemplate];
-  const updateTemplate = (changes: Partial<CampaignMessageTemplate>) => {
-    if (activeTemplate === null) return;
-    setTemplates(current => current.map((item, index) => index === activeTemplate ? { ...item, ...changes } : item));
-  };
-  return <section className="campaign-messages-screen">
-    <header className="campaign-screen-intro"><h3>Candidate messages</h3><p>Prepare messages for each recruitment stage, manage outgoing emails and review delivery history.</p></header>
-    <div className="campaign-message-metrics">{[["Queued", "0"], ["Sent", "0"], ["Failed", "0"]].map(([label, count]) => <section key={label}><span>{label}</span><strong>{count}</strong></section>)}</div>
-    <section className="campaign-message-card">
-      <header><div><h3>Templates by stage</h3><p>Preview stage messages, compose personalized emails and choose when each stage sends automatically.</p></div></header>
-      <div className="campaign-template-list">{templates.map((item, index) => <div className="campaign-template-row" key={item.stage}>
-        <div><strong>{item.stage}</strong><small>0 awaiting review</small></div>
-        <Button variant="secondary" onClick={() => { setActiveTemplate(index); setMessageStatus(""); }}>Preview &amp; compose</Button>
-        <label><input type="checkbox" checked={item.autoSend} onChange={event => setTemplates(current => current.map((message, itemIndex) => itemIndex === index ? { ...message, autoSend: event.target.checked } : message))}/> Auto-send</label>
-      </div>)}</div>
-    </section>
-    <section className="campaign-message-card campaign-message-queue">
-      <header><div><h3>Message queue and history</h3><p>Review queued messages, send selected emails, retry failures and view messages that have already been sent.</p></div></header>
-      <div className="campaign-queue-controls"><label>Show<select value={showQueue} onChange={event => setShowQueue(event.target.value)}><option>All</option><option>Queued</option><option>Sent</option><option>Failed</option></select></label><Button variant="secondary" disabled>Select all queued</Button><Button variant="secondary" disabled>Send selected (0)</Button></div>
-      <div className="campaign-queue-empty"><strong>No messages yet</strong><p>Candidate messages will appear here as applications progress through the recruitment stages.</p></div>
-    </section>
-    {template && <div className="campaign-message-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setActiveTemplate(null); }}>
-      <form className="campaign-message-dialog" role="dialog" aria-modal="true" aria-labelledby="campaign-message-dialog-title" onSubmit={event => { event.preventDefault(); setMessageStatus("Template saved in this mock. No email was sent."); }}>
-        <header><div><span className="eyebrow">{template.stage}</span><h3 id="campaign-message-dialog-title">Preview &amp; compose</h3></div><button type="button" className="icon-btn" onClick={() => setActiveTemplate(null)} aria-label="Close message editor"><Icon name="close"/></button></header>
-        <label>Subject<input value={template.subject} onChange={event => updateTemplate({ subject: event.target.value })}/></label>
-        <label>Message<textarea rows={7} value={template.body} onChange={event => updateTemplate({ body: event.target.value })}/></label>
-        <p>Mock preview only. No email will be sent.</p>
-        {messageStatus && <span className="campaign-message-status" role="status">{messageStatus}</span>}
-        <footer><Button variant="secondary" onClick={() => setActiveTemplate(null)}>Close</Button><Button type="submit">Save template</Button></footer>
-      </form>
-    </div>}
-  </section>;
-}
-
-function CampaignExportScreen({ campaign, candidates, candidateError }: { campaign: DemoCampaign; candidates: CampaignCandidate[]; candidateError: string | null }) {
-  const [downloadState, setDownloadState] = useState<"ready" | "downloading" | "downloaded" | "failed">("ready");
-  const [downloadError, setDownloadError] = useState("");
-  const stageTitle = (stage: CandidateStage) => campaignPipelineStages.find(item => item.id === stage)?.title ?? stage;
-  const longlistCandidates = candidates
-    .filter(candidate => candidate.stage === "longlist")
-    .sort((left, right) => right.requirementsScore - left.requirementsScore || left.name.localeCompare(right.name));
-  const shortlistCandidates = candidates
-    .filter(candidate =>
-      candidate.stage === "shortlist-proposed" ||
-      candidate.stage === "shortlist-approved" ||
-      candidate.stage === "reference-check" ||
-      candidate.stage === "offer" ||
-      candidate.stageHistory?.some(stage => stage === "shortlist-proposed" || stage === "shortlist-approved"),
-    )
-    .sort((left, right) => right.requirementsScore - left.requirementsScore || left.name.localeCompare(right.name));
-  const getShortlistDecision = (candidate: CampaignCandidate) => candidate.shortlistDecision ??
-    (candidate.stage === "shortlist-approved" || candidate.stage === "reference-check" || candidate.stage === "offer" || candidate.stageHistory?.includes("shortlist-approved")
-      ? "Approved"
-      : "Pending");
-
-  const downloadWorkbook = async () => {
-    setDownloadState("downloading");
-    setDownloadError("");
-    try {
-      await new Promise<void>(resolve => window.setTimeout(resolve, 180));
-      const escapeXml = (value: string | number) => String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
-      const row = (cells: Array<string | number>) => `<Row>${cells.map(value => `<Cell><Data ss:Type="${typeof value === "number" ? "Number" : "String"}">${escapeXml(value)}</Data></Cell>`).join("")}</Row>`;
-      const worksheet = (name: string, headers: string[], rows: Array<Array<string | number>>) => `<Worksheet ss:Name="${name}"><Table>${row(headers)}${rows.map(row).join("")}</Table></Worksheet>`;
-      const longlistRows = longlistCandidates.map(candidate => [
-        candidate.name,
-        candidate.email,
-        new Date(candidate.appliedAt).toLocaleDateString(),
-        candidate.requirementsScore,
-        `${candidate.mustHaveResults.filter(result => result.met).length} of ${candidate.mustHaveResults.length}`,
-        candidate.aiFitScore,
-      ]);
-      const shortlistRows = shortlistCandidates.map(candidate => [
-        candidate.name,
-        candidate.email,
-        new Date(candidate.appliedAt).toLocaleDateString(),
-        stageTitle(candidate.stage),
-        getShortlistDecision(candidate),
-      ]);
-      const workbook = `<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${worksheet("Longlist", ["Applicant", "Email", "Applied", "Requirements score (%)", "Must-haves met", "AI fit score (%)"], longlistRows)}${worksheet("Shortlist", ["Applicant", "Email", "Applied", "Current stage", "Approver decision"], shortlistRows)}</Workbook>`;
-      const url = URL.createObjectURL(new Blob([workbook], { type: "application/vnd.ms-excel" }));
-      const link = document.createElement("a");
-      try {
-        link.href = url;
-        link.download = `${campaign.title.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "campaign"}-export.xls`;
-        document.body.appendChild(link);
-        link.click();
-      } finally {
-        link.remove();
-        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      }
-      setDownloadState("downloaded");
-    } catch (error) {
-      console.error("Could not create or download the campaign spreadsheet.", error);
-      setDownloadError("The spreadsheet could not be downloaded. Please try again.");
-      setDownloadState("failed");
-    }
-  };
-  return <section className="campaign-export-screen">
-    <article className="campaign-export-card">
-      <header><div><h3>Spreadsheet export</h3><p>Download one workbook with two sheets, based on the latest saved campaign data.</p></div><Button disabled={downloadState === "downloading" || Boolean(candidateError)} onClick={() => { void downloadWorkbook(); }}>{downloadState === "downloading" ? "Downloading…" : downloadState === "failed" ? "Retry download" : downloadState === "downloaded" ? "Download again" : "Download spreadsheet"}</Button></header>
-      <div className="campaign-export-sheets"><section><h4>Longlist</h4><p>Everyone on the Longlist now, sorted by requirements score from highest to lowest.</p><small>{longlistCandidates.length} candidates</small></section><section><h4>Shortlist</h4><p>Everyone ever shortlisted, including candidates who moved on to references or an offer, with the approver’s decision.</p><small>{shortlistCandidates.length} candidates</small></section></div>
-      <p>The Longlist sheet includes each candidate’s name, email, application date, requirements score, must-haves met and AI fit score. The Shortlist sheet includes each candidate’s name, email, application date, current stage and approver decision.</p>
-      <small>Every download is recorded in the campaign history.</small>
-      {candidateError && <p className="campaign-export-error" role="alert">{candidateError}</p>}
-      {downloadState === "downloading" && <p className="campaign-export-status" role="status">Preparing your spreadsheet…</p>}
-      {downloadState === "downloaded" && <p className="campaign-export-status" role="status">Spreadsheet downloaded.</p>}
-      {downloadState === "failed" && <p className="campaign-export-error" role="alert">{downloadError}</p>}
-    </article>
-  </section>;
+  const description = getCampaignRoleDescription(campaign).replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  const listItem = campaigns.find(item => item.id === campaign.id);
+  const createdLabel = campaign.publishedAt ? new Date(campaign.publishedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : listItem?.published && listItem.published !== "Not published" ? listItem.published : "recently";
+  return <CampaignWorkspacePage
+    key={campaign.id}
+    campaign={campaign}
+    description={description}
+    requirements={getCampaignRequirements(campaign)}
+    createdLabel={createdLabel}
+    publicUrl={item => getPublicCampaignUrl(item.slug || item.id)}
+    onSaveCampaign={changes => {
+      const current = getCampaignDetails(campaign.id) ?? campaign;
+      const next: DemoCampaign = { ...current, ...changes };
+      const saved = campaign.id === "1" ? saveDemoCampaign(next) : saveCreatedCampaign(next);
+      return saved ? next : null;
+    }}
+    onBack={() => go("/recruiter/campaigns")}
+    onEdit={section => go(`/recruiter/campaigns/${campaign.id}/edit${section ? `#${section}` : ""}`)}
+    onBulkUpload={() => go(`/recruiter/campaigns/${campaign.id}/bulk-upload`)}
+  />;
 }
 
 function CampaignBulkUploadPage({ campaignId }: { campaignId: string }) {
@@ -1488,16 +762,17 @@ function CampaignBulkUploadPage({ campaignId }: { campaignId: string }) {
   };
 
   return <div className="bulk-cv-page">
-    <button className="bulk-cv-back" onClick={() => go(`/recruiter/campaigns/${campaign.id}`)}>Back to campaign</button>
+    <nav className="campaign-breadcrumb" aria-label="Breadcrumb"><button type="button" className="text-btn" onClick={() => go("/recruiter/campaigns")}>Campaigns</button><Icon name="chevron" size={14}/><button type="button" className="text-btn" onClick={() => go(`/recruiter/campaigns/${campaign.id}`)}>{campaign.title || "Untitled campaign"}</button><Icon name="chevron" size={14}/><span aria-current="page">Bulk upload</span></nav>
     <header className="bulk-cv-heading">
-      <h1>Bulk CV upload: {campaign.title || "Untitled campaign"}</h1>
+      <span className="eyebrow">Bulk CV upload</span>
+      <h1>{campaign.title || "Untitled campaign"}</h1>
       <p>Upload CVs for this campaign. In the connected workflow, each CV becomes a candidate on the board and is screened against the campaign’s requirements. You make every decision: nobody is rejected or shortlisted automatically.</p>
       <p className="bulk-cv-demo-note">Mock mode: selected files stay in this browser. No CVs are uploaded, parsed, or added as candidates.</p>
     </header>
 
     <section className="surface bulk-cv-card bulk-cv-requirements">
       <div className="bulk-cv-card-title">
-        <div><h2>1. Job requirements</h2><p>Every uploaded CV is screened against this campaign’s requirements, the same way as applications from the public form.</p></div>
+        <div><h2><span className="bulk-cv-step">1</span>Check the job requirements</h2><p>Every uploaded CV is screened against this campaign’s requirements, the same way as applications from the public form.</p></div>
         <Button variant="secondary" onClick={() => go(`/recruiter/campaigns/${campaign.id}/edit`)}>Edit requirements</Button>
       </div>
       {requirements.length > 0
@@ -1509,7 +784,7 @@ function CampaignBulkUploadPage({ campaignId }: { campaignId: string }) {
     </section>
 
     <section className="surface bulk-cv-card bulk-cv-upload-card">
-      <header className="bulk-cv-card-heading"><h2>2. Upload CVs</h2><p>Up to 200 PDF or DOCX files per batch, 10 MB each, 500 MB in total.</p></header>
+      <header className="bulk-cv-card-heading"><h2><span className="bulk-cv-step">2</span>Confirm consent and upload CVs</h2><p>Up to 200 PDF or DOCX files per batch, 10 MB each, 500 MB in total.</p></header>
       <fieldset className="bulk-cv-consent">
         <legend>Candidate consent</legend>
         <div className="bulk-cv-consent-source">
@@ -1528,8 +803,8 @@ function CampaignBulkUploadPage({ campaignId }: { campaignId: string }) {
       </fieldset>
 
       <div className={`bulk-cv-dropzone${isDragging ? " dragging" : ""}`} onDragOver={event => { event.preventDefault(); setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop}>
-        <Icon name="upload" size={22}/>
-        <p>Drag CVs here, or</p>
+        <span className="bulk-cv-dropzone-icon"><Icon name="upload" size={22}/></span>
+        <p><strong>Drag CVs here</strong> or choose them from your computer</p>
         <label className="bulk-cv-choose-files" htmlFor="bulk-cv-files">Choose files</label>
         <input id="bulk-cv-files" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple onChange={handleFileInput}/>
       </div>
@@ -1559,181 +834,345 @@ function createDraftCampaign(): DemoCampaign {
   };
 }
 
+const CRITERION_TYPES = ["Skill", "Years of experience", "Qualification", "Document", "Licence", "Location", "Availability", "Language", "Custom (checked by a person)"];
+const MAX_REQUIREMENTS = 30;
+const LAST_MAIN_RECRUITER_REASON = "A campaign must always have a main recruiter. Make someone else the main recruiter first.";
+
+function requirementProblem(requirement: CampaignRequirement): string | null {
+  if (!requirement.title.trim()) return "Give the requirement a name.";
+  if (requirement.title.length > 200) return "Keep the requirement name under 200 characters.";
+  if (requirement.category === "Custom (checked by a person)") return null;
+  const value = (requirement.value ?? "").trim();
+  if (requirement.category === "Years of experience") {
+    if (!value) return "Enter a whole number of years.";
+    const years = Number(value);
+    if (!Number.isInteger(years)) return "Use whole years.";
+    if (years < 0) return "Years cannot be negative.";
+    if (years > 50) return "Use 50 years or fewer.";
+    return null;
+  }
+  if (!value) return "Say what to look for.";
+  if (value.length > 120) return "Keep what to look for under 120 characters.";
+  return null;
+}
+
 function CampaignEditor({ campaignId }: { campaignId: string }) {
+  const role = useMockCampaignRole();
+  const editPermission = canPerform(role, "editCampaign");
+  const teamPermission = canPerform(role, "manageTeam");
+  const canEdit = editPermission.allowed;
+  const canManageTeam = teamPermission.allowed;
+  const editReason = editPermission.allowed ? null : editPermission.reason;
+  const teamReason = teamPermission.allowed ? null : teamPermission.reason;
   const [campaign, setCampaign] = useState<DemoCampaign>(() => {
     const savedCampaign = campaignId === "new" ? createDraftCampaign() : getCampaignDetails(campaignId) ?? createDraftCampaign();
     return {
       ...savedCampaign,
       roleDescription: getCampaignRoleDescription(savedCampaign),
       summary: "",
-      campaignTeam: savedCampaign.campaignTeam ?? [{ id: "owner-dave", name: "Dave Sench", email: "dave30@gmail.com", role: "Main recruiter" as const }],
+      campaignTeam: campaignTeamOf(savedCampaign),
       approver: savedCampaign.approver ?? null,
-      requirements: savedCampaign.requirements ?? (savedCampaign.id === "1" ? [{ id: "requirement-license", title: "Valid driving licence", category: "Skill", kind: "Must-have" as const, weight: 5 }] : []),
+      requirements: savedCampaign.requirements ?? (savedCampaign.id === "1" ? defaultCampaignRequirements : []),
       evaluationMode: savedCampaign.evaluationMode ?? "default" as const,
       evaluationInstructions: savedCampaign.evaluationInstructions ?? "",
+      evaluationEnabled: savedCampaign.evaluationEnabled ?? true,
     };
   });
+  const actor = actorForRole(role, campaign.campaignTeam ?? []);
+  const [busy, setBusy] = useState<"" | "save" | "unpublish" | "archive" | "delete" | "restore">("");
+  const [saveFailed, setSaveFailed] = useState(false);
   const [publishError, setPublishError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
-  const [additionalRecruiterEmail, setAdditionalRecruiterEmail] = useState("");
-  const [approverName, setApproverName] = useState(() => campaign.approver?.name || "");
-  const [approverEmail, setApproverEmail] = useState(() => campaign.approver?.email || "");
-  const [approverMessage, setApproverMessage] = useState("");
+  const [publishOpen, setPublishOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  // Requirements are edited as a draft and saved together after a confirmation.
+  const [requirementDraft, setRequirementDraft] = useState<CampaignRequirement[] | null>(null);
+  const [requirementProblems, setRequirementProblems] = useState<Record<string, string>>({});
+  const [confirmRequirements, setConfirmRequirements] = useState(false);
+  const [requirementsSaving, setRequirementsSaving] = useState(false);
+  const [requirementsNote, setRequirementsNote] = useState("");
+  const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [newMemberRole, setNewMemberRole] = useState<CampaignRecruiter["role"]>("Additional recruiter");
+  const [teamError, setTeamError] = useState("");
+  const [handover, setHandover] = useState<CampaignRecruiter | null>(null);
+  const [removing, setRemoving] = useState<CampaignRecruiter | null>(null);
+
+  useEffect(() => {
+    if (!window.location.hash) return;
+    const timer = window.setTimeout(() => document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const updateCampaign = (changes: Partial<DemoCampaign>) => {
     setCampaign(current => ({ ...current, ...changes }));
     setSaveMessage("");
+    setSaveFailed(false);
   };
-  const saveCampaign = (published: boolean, navigateToDetail = true, changes: Partial<DemoCampaign> = {}) => {
+  const persist = (changes: Partial<DemoCampaign> = {}): DemoCampaign | null => {
     const updatedCampaign = { ...campaign, ...changes };
     if (!updatedCampaign.title.trim()) {
-      setPublishError("Add a campaign name before saving.");
-      return false;
-    }
-    if (published && (!updatedCampaign.department.trim() || !updatedCampaign.workArrangement.trim())) {
-      setPublishError("Choose a service category and work arrangement before publishing.");
-      return false;
+      setPublishError("Campaign name is required.");
+      setSaveFailed(true);
+      return null;
     }
     const storedCampaign = campaignId === "1" ? readDemoCampaign() : getCampaignDetails(campaignId);
-    const next: DemoCampaign = {
-      ...(storedCampaign || defaultDemoCampaign),
-      ...updatedCampaign,
-      published,
-      publishedAt: published ? updatedCampaign.publishedAt || new Date().toISOString() : updatedCampaign.publishedAt,
-      ...(published ? { archived: false, deleted: false, paused: false } : {}),
-    };
+    const next: DemoCampaign = { ...(storedCampaign || defaultDemoCampaign), ...updatedCampaign };
     const saved = campaignId === "1" ? saveDemoCampaign(next) : saveCreatedCampaign(next);
     if (!saved) {
-      setPublishError(published ? "The campaign could not be published in this browser. Please try again." : "The campaign could not be saved in this browser. Please try again.");
-      return false;
+      setSaveFailed(true);
+      return null;
     }
     setCampaign(next);
     setPublishError("");
-    setSaveMessage(published ? "Campaign published." : "Draft saved.");
-    if (navigateToDetail) go(campaignId === "new" ? "/recruiter/campaigns" : `/recruiter/campaigns/${campaignId}`);
-    return true;
+    setSaveFailed(false);
+    return next;
   };
-  const changeRecruiterRole = (memberId: string, role: CampaignRecruiter["role"]) => {
-    const team = campaign.campaignTeam || [];
-    if (role === "Additional recruiter" && team.find(member => member.id === memberId)?.role === "Main recruiter" && team.every(member => member.id === memberId || member.role !== "Main recruiter")) {
-      setPublishError("A campaign must always have a main recruiter.");
+  const run = async (kind: typeof busy, work: () => DemoCampaign | null, message: string, after?: (saved: DemoCampaign) => void) => {
+    setBusy(kind);
+    setSaveMessage("");
+    await new Promise(resolve => window.setTimeout(resolve, 400));
+    const saved = work();
+    setBusy("");
+    if (saved) {
+      setSaveMessage(message);
+      after?.(saved);
+    }
+  };
+  const isPublished = campaign.published && !campaign.archived && !campaign.deleted;
+  const statusText = campaign.deleted ? "deleted" : campaign.archived ? "closed" : campaign.paused ? "paused" : campaign.published ? "published" : "draft";
+  const savedRequirements = campaign.requirements || [];
+  const requirementRows = requirementDraft ?? savedRequirements;
+  const requirementsDirty = requirementDraft !== null;
+  const team = campaign.campaignTeam || [];
+  const mainRecruiter = team.find(member => member.role === "Main recruiter");
+
+  const startPublish = () => {
+    const missing = [!campaign.department.trim() ? "Service category" : null, !campaign.workArrangement.trim() ? "Work arrangement" : null].filter(Boolean);
+    if (missing.length) {
+      setPublishError(`${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} required before publishing.`);
       return;
     }
-    updateCampaign({ campaignTeam: team.map(member => member.id === memberId
-      ? { ...member, role }
-      : role === "Main recruiter" && member.role === "Main recruiter" ? { ...member, role: "Additional recruiter" } : member) });
-  };
-  const addRecruiter = () => {
-    const email = additionalRecruiterEmail.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setPublishError("Enter a valid work email address.");
+    if (!campaign.title.trim()) {
+      setPublishError("Campaign name is required.");
       return;
     }
-    if ((campaign.campaignTeam || []).some(member => member.email.toLowerCase() === email)) {
-      setPublishError("This recruiter is already on the campaign team.");
+    setPublishError("");
+    setPublishOpen(true);
+  };
+
+  const editRequirements = (next: CampaignRequirement[]) => {
+    setRequirementDraft(next);
+    setRequirementProblems({});
+    setRequirementsNote("");
+    setConfirmRequirements(false);
+  };
+  const patchRequirement = (id: string, changes: Partial<CampaignRequirement>) => editRequirements(requirementRows.map(item => item.id === id ? { ...item, ...changes } : item));
+  const moveRequirement = (index: number, direction: -1 | 1) => {
+    const next = [...requirementRows];
+    const [item] = next.splice(index, 1);
+    next.splice(index + direction, 0, item);
+    editRequirements(next);
+  };
+  const requestRequirementsSave = () => {
+    const found: Record<string, string> = {};
+    requirementRows.forEach(item => {
+      const problem = requirementProblem(item);
+      if (problem) found[item.id] = problem;
+    });
+    setRequirementProblems(found);
+    if (Object.keys(found).length) return;
+    setConfirmRequirements(true);
+  };
+  const confirmRequirementsSave = async () => {
+    setRequirementsSaving(true);
+    await new Promise(resolve => window.setTimeout(resolve, 400));
+    const saved = persist({ requirements: requirementRows });
+    setRequirementsSaving(false);
+    if (!saved) return;
+    appendCampaignActivity(campaign.id, "campaign.criteria_updated", actor.name, requirementRows.length);
+    setRequirementDraft(null);
+    setConfirmRequirements(false);
+    setRequirementsNote("Requirements saved.");
+  };
+
+  const saveTeam = (next: CampaignRecruiter[], action: "campaign.member_added" | "campaign.member_role_changed" | "campaign.member_removed") => {
+    if (persist({ campaignTeam: next })) {
+      appendCampaignActivity(campaign.id, action, actor.name);
+      setTeamError("");
+    } else {
+      setTeamError("That did not work. Try again.");
+    }
+  };
+  const changeRole = (member: CampaignRecruiter, nextRole: CampaignRecruiter["role"]) => {
+    setTeamError("");
+    if (nextRole === member.role) return;
+    if (nextRole === "Main recruiter") {
+      setHandover(member);
       return;
     }
-    const name = email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, character => character.toUpperCase());
-    updateCampaign({ campaignTeam: [...(campaign.campaignTeam || []), { id: `campaign-recruiter-${Date.now()}`, name, email, role: "Additional recruiter" }] });
-    setAdditionalRecruiterEmail("");
+    saveTeam(team.map(item => item.id === member.id ? { ...item, role: nextRole } : item), "campaign.member_role_changed");
   };
-  const addRequirement = () => updateCampaign({ requirements: [...(campaign.requirements || []), { id: `requirement-${Date.now()}`, title: "", category: "Skill", kind: "Preferred", weight: 3 }] });
-  const updateRequirement = (id: string, changes: Partial<CampaignRequirement>) => updateCampaign({ requirements: (campaign.requirements || []).map(requirement => requirement.id === id ? { ...requirement, ...changes } : requirement) });
-  const removeRecruiter = (member: CampaignRecruiter) => {
-    if (member.role === "Main recruiter" && (campaign.campaignTeam || []).filter(item => item.role === "Main recruiter").length === 1) {
-      setPublishError("Assign another main recruiter before removing this one.");
+  const addMember = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canManageTeam) return;
+    const email = newMemberEmail.trim().toLowerCase();
+    if (!email) {
+      setTeamError("Enter the person's work email.");
       return;
     }
-    updateCampaign({ campaignTeam: (campaign.campaignTeam || []).filter(item => item.id !== member.id) });
-  };
-  const archiveCampaign = () => {
-    if (saveCampaign(false, false, { archived: true, paused: false, deleted: false })) go("/recruiter/campaigns");
-  };
-  const deleteCampaign = () => {
-    if (saveCampaign(false, false, { archived: false, paused: false, deleted: true })) {
-      setDeleteConfirmOpen(false);
-      go("/recruiter/campaigns");
+    const person = ORGANISATION_PEOPLE.find(item => item.email.toLowerCase() === email);
+    if (!person) {
+      setTeamError("No one in your organisation has that email. Only people in your organisation can be added.");
+      return;
     }
+    if (team.some(member => member.email.toLowerCase() === email)) {
+      setTeamError("That person is already on this campaign.");
+      return;
+    }
+    saveTeam([...team, { id: person.id, name: person.name, email: person.email, role: newMemberRole }], "campaign.member_added");
+    setNewMemberEmail("");
   };
-  const statusText = campaign.deleted ? "deleted" : campaign.archived ? "archived" : campaign.paused ? "paused" : campaign.published ? "published" : "draft";
-  const requirements = campaign.requirements || [];
+
+  const editSections = [
+    ["campaign-edit-details", "Job board details"],
+    ["campaign-edit-team", "Campaign team"],
+    ["campaign-edit-requirements", "Requirements"],
+    ["campaign-edit-form", "Application form"],
+    ["campaign-edit-evaluation", "Evaluation"],
+  ];
+  const guard = (allowed: boolean, reason: string | null, button: React.ReactElement) => allowed ? button : <span className="rf-permission-guard" title={reason ?? undefined} tabIndex={0}>{button}</span>;
+
   return <div className="campaign-edit-page">
-    <button className="campaign-edit-back" onClick={() => go("/recruiter/campaigns")}>← Campaigns</button>
+    <nav className="campaign-breadcrumb" aria-label="Breadcrumb"><button type="button" className="text-btn" onClick={() => go("/recruiter/campaigns")}>← Campaigns</button>{campaignId !== "new" && <><Icon name="chevron" size={14}/><button type="button" className="text-btn" onClick={() => go(`/recruiter/campaigns/${campaignId}`)}>{campaign.title || "Untitled campaign"}</button></>}<Icon name="chevron" size={14}/><span aria-current="page">{campaignId === "new" ? "New campaign" : "Edit"}</span></nav>
     <header className="campaign-edit-header">
-      <div><h1>{campaign.title || "Untitled campaign"}</h1><p>Status: <strong>{statusText}</strong></p></div>
+      <div><span className="eyebrow">{campaignId === "new" ? "Create campaign" : "Edit campaign"}</span><h1>{campaign.title.trim() || "Untitled campaign"}</h1><p>Status: <Badge tone={statusText === "published" ? "success" : statusText === "draft" ? "neutral" : statusText === "paused" ? "warning" : "danger"}>{statusText[0].toUpperCase() + statusText.slice(1)}</Badge>{campaign.deleted && <strong className="cw-danger-text">Deleted</strong>}</p></div>
       <div className="campaign-edit-actions">
-        <Button variant="secondary" onClick={() => saveCampaign(campaign.published)}>{campaign.published ? "Save changes" : "Save draft"}</Button>
-        <Button onClick={() => saveCampaign(true)}>Publish &amp; share</Button>
-        {campaignId !== "new" && <><Button variant="secondary" onClick={archiveCampaign}>Archive</Button><Button variant="danger" onClick={() => setDeleteConfirmOpen(true)}>Delete</Button></>}
+        {guard(canEdit, editReason, <Button variant="secondary" disabled={!canEdit || Boolean(busy) || Boolean(campaign.deleted)} onClick={() => { void run("save", () => persist(), campaign.published ? "Changes saved." : "Draft saved."); }}>{busy === "save" ? "Saving…" : "Save draft"}</Button>)}
+        {campaign.deleted
+          ? guard(canEdit, editReason, <Button disabled={!canEdit || Boolean(busy)} onClick={() => { void run("restore", () => persist({ deleted: false, archived: false }), "Campaign restored."); }}>{busy === "restore" ? "Restoring…" : "Restore"}</Button>)
+          : <>
+            {isPublished
+              ? guard(canEdit, editReason, <Button variant="secondary" disabled={!canEdit || Boolean(busy)} onClick={() => { void run("unpublish", () => persist({ published: false, paused: false }), "Campaign unpublished.", () => appendCampaignActivity(campaign.id, "campaign.unpublished", actor.name)); }}>{busy === "unpublish" ? "Saving…" : "Unpublish"}</Button>)
+              : guard(canEdit, editReason, <Button disabled={!canEdit || Boolean(busy)} onClick={startPublish}>Publish &amp; share</Button>)}
+            {campaignId !== "new" && guard(canEdit, editReason, <Button variant="secondary" disabled={!canEdit || Boolean(busy)} onClick={() => { void run("archive", () => persist({ archived: true, published: false, paused: false }), "Campaign archived.", () => go("/recruiter/campaigns")); }}>{busy === "archive" ? "Archiving…" : "Archive"}</Button>)}
+            {campaignId !== "new" && guard(canEdit, editReason, <Button variant="danger" disabled={!canEdit || Boolean(busy)} onClick={() => setDeleteConfirmOpen(true)}>Delete</Button>)}
+          </>}
       </div>
     </header>
-    {(publishError || saveMessage) && <p className={publishError ? "campaign-edit-error" : "campaign-edit-saved"} role={publishError ? "alert" : "status"}>{publishError || saveMessage}</p>}
+    {editReason && <p className="campaign-edit-warning" role="note">{editReason}</p>}
+    {saveFailed && <p className="campaign-edit-error" role="alert">Could not save. Fix validation issues or try again.</p>}
+    {publishError && <p className="campaign-edit-error" role="alert">{publishError}</p>}
+    {saveMessage && <p className="campaign-edit-saved" role="status">{saveMessage}</p>}
+    <nav className="campaign-edit-nav" aria-label="Campaign settings sections">{editSections.map(([id, label], index) => <a key={id} href={`#${id}`} onClick={event => { event.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}><span>{index + 1}</span>{label}</a>)}</nav>
 
-    <section className="surface campaign-edit-section">
+    <section className="surface campaign-edit-section" id="campaign-edit-details">
       <header className="campaign-edit-section-heading"><h2>Job board details</h2><p>The campaign name is the job title candidates see. Service category and work arrangement power candidate filters on the job board. Both are required before publishing.</p></header>
-      <label className="campaign-edit-field campaign-edit-field-full"><span>Campaign name</span><input value={campaign.title} onChange={event => updateCampaign({ title: event.target.value })}/></label>
+      <label className="campaign-edit-field campaign-edit-field-full"><span>Campaign name</span><input value={campaign.title} disabled={!canEdit} maxLength={120} placeholder="e.g. Geology Intern" onChange={event => updateCampaign({ title: event.target.value })}/></label>
       <div className="campaign-edit-grid">
-        <label className="campaign-edit-field"><span>Service category</span><select value={campaign.department} onChange={event => updateCampaign({ department: event.target.value })}><option value="">Select category</option>{["Accountant", "Customer success", "Design", "Engineering", "Finance", "Marketing", "Operations", "Other"].map(category => <option key={category}>{category}</option>)}</select></label>
-        <label className="campaign-edit-field"><span>Work arrangement</span><select value={campaign.workArrangement} onChange={event => updateCampaign({ workArrangement: event.target.value })}><option value="">Select arrangement</option>{["On-site", "Hybrid", "Remote"].map(arrangement => <option key={arrangement}>{arrangement}</option>)}</select></label>
+        <label className="campaign-edit-field"><span>Service category</span><input list="campaign-service-categories" value={campaign.department} disabled={!canEdit} placeholder="e.g. Software developer" onChange={event => updateCampaign({ department: event.target.value })}/></label>
+        <datalist id="campaign-service-categories">{["Accountant", "Customer success", "Design", "Engineering", "Finance", "Marketing", "Operations", "Software developer", "Other"].map(category => <option key={category} value={category}/>)}</datalist>
+        <label className="campaign-edit-field"><span>Work arrangement</span><select value={campaign.workArrangement} disabled={!canEdit} onChange={event => updateCampaign({ workArrangement: event.target.value })}><option value="">Select arrangement</option>{["Remote", "Hybrid", "On-site"].map(arrangement => <option key={arrangement}>{arrangement}</option>)}</select></label>
       </div>
       <RichTextEditor key={campaign.id} value={campaign.roleDescription} onChange={roleDescription => updateCampaign({ roleDescription, summary: "" })}/>
     </section>
 
-    <section className="surface campaign-edit-section">
-      <header className="campaign-edit-section-heading"><h2>Campaign team</h2><p>Recruiters from your organisation work on this campaign; only they and the organisation owner can see it. The approver signs off the shortlist and the offer. Only the main recruiter or the owner can change the team.</p></header>
-      <p className="campaign-edit-info">A campaign always has one main recruiter. To change who it is, give another team member the main recruiter role; the current main recruiter becomes an additional recruiter.</p>
-      <div className="campaign-team-list">{(campaign.campaignTeam || []).map(member => <div className="campaign-team-row" key={member.id}>
-        <div><strong>{member.name}</strong><small>{member.email}</small></div>
-        <select aria-label={`Role for ${member.name}`} value={member.role} onChange={event => changeRecruiterRole(member.id, event.target.value as CampaignRecruiter["role"])}><option>Main recruiter</option><option>Additional recruiter</option></select>
-        <Button variant="danger" disabled={member.role === "Main recruiter" && (campaign.campaignTeam || []).filter(item => item.role === "Main recruiter").length === 1} onClick={() => removeRecruiter(member)}>Remove</Button>
-      </div>)}</div>
-      <div className="campaign-edit-add-row"><label className="campaign-edit-field"><span>Work email</span><input type="email" placeholder="name@yourcompany.com" value={additionalRecruiterEmail} onChange={event => setAdditionalRecruiterEmail(event.target.value)}/></label><Button onClick={addRecruiter}>Add as additional recruiter</Button></div>
-      <div className="campaign-edit-subsection">
-        <header className="campaign-edit-section-heading"><h3>Approver</h3><p>The line manager for this role. They approve the shortlist and the offer, and see nothing else. They are not part of your organisation: invite them by email and they get their own approver account.</p></header>
-        {!campaign.approver && <p className="campaign-edit-warning">No approver yet. Shortlists and offers cannot be approved until one accepts an invitation.</p>}
-        {campaign.approver && <p className="campaign-edit-success">Approver invite saved in this mock. No email was sent.</p>}
-        <div className="campaign-edit-approver-row"><label className="campaign-edit-field"><span>Line manager’s name</span><input value={approverName} onChange={event => { setApproverName(event.target.value); setApproverMessage(""); }}/></label><label className="campaign-edit-field"><span>Their email</span><input type="email" placeholder="name@example.com" value={approverEmail} onChange={event => { setApproverEmail(event.target.value); setApproverMessage(""); }}/></label><Button onClick={() => {
-          if (!approverName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(approverEmail.trim())) {
-            setPublishError("Enter the line manager’s name and a valid email address.");
-            return;
-          }
-          const approver = { name: approverName.trim(), email: approverEmail.trim().toLowerCase() };
-          if (saveCampaign(campaign.published, false, { approver })) setApproverMessage("Approver invite saved in this mock. No email was sent.");
-        }}>Invite approver</Button></div>
-        {approverMessage && <p className="campaign-edit-saved" role="status">{approverMessage}</p>}
-      </div>
+    <section className="surface campaign-edit-section" id="campaign-edit-team">
+      <header className="campaign-edit-section-heading"><h2>Campaign team</h2><p>Recruiters from your organisation work on this campaign; only they and the organisation owner can see it. The line manager signs off the shortlist and the offer. Only the main recruiter or an administrator can change the team.</p></header>
+      {teamReason && <p className="campaign-edit-warning" role="note">{teamReason}</p>}
+      <div className="campaign-team-list">{team.map(member => {
+        const isMain = member.role === "Main recruiter";
+        return <div className="campaign-team-row" key={member.id}>
+          <div><strong>{member.name}</strong><small>{member.email}</small></div>
+          <select aria-label={`Role for ${member.name}`} title={isMain ? LAST_MAIN_RECRUITER_REASON : teamReason ?? undefined} value={member.role} disabled={!canManageTeam || isMain} onChange={event => changeRole(member, event.target.value as CampaignRecruiter["role"])}><option>Main recruiter</option><option>Additional recruiter</option><option>Line manager</option></select>
+          {guard(canManageTeam && !isMain, isMain ? LAST_MAIN_RECRUITER_REASON : teamReason, <Button variant="danger" disabled={!canManageTeam || isMain} onClick={() => { setTeamError(""); setRemoving(member); }}>Remove</Button>)}
+          {isMain && canManageTeam && <small className="cw-team-note">{LAST_MAIN_RECRUITER_REASON}</small>}
+        </div>;
+      })}</div>
+      {handover && <div className="cw-confirm warning" role="alertdialog" aria-labelledby="team-handover-title">
+        <strong id="team-handover-title">Make {handover.name} the main recruiter?</strong>
+        <p>{mainRecruiter ? `${mainRecruiter.name} will become an additional recruiter.` : "They will become the main recruiter."}</p>
+        <div><Button onClick={() => { saveTeam(team.map(item => item.id === handover.id ? { ...item, role: "Main recruiter" } : item.role === "Main recruiter" ? { ...item, role: "Additional recruiter" } : item), "campaign.member_role_changed"); setHandover(null); }}>Make main recruiter</Button><Button variant="secondary" onClick={() => setHandover(null)}>Cancel</Button></div>
+      </div>}
+      {removing && <div className="cw-confirm danger" role="alertdialog" aria-labelledby="team-remove-title">
+        <strong id="team-remove-title">Remove {removing.name} from this campaign?</strong>
+        <p>They will only be able to view the campaign.</p>
+        <div><Button variant="danger" onClick={() => { saveTeam(team.filter(item => item.id !== removing.id), "campaign.member_removed"); setRemoving(null); }}>Yes, remove</Button><Button variant="secondary" onClick={() => setRemoving(null)}>Cancel</Button></div>
+      </div>}
+      <form className="campaign-edit-add-row cw-team-add" aria-label="Add a team member" onSubmit={addMember}>
+        <label className="campaign-edit-field"><span>Work email</span><input type="email" list="campaign-org-people" autoComplete="off" placeholder="name@yourcompany.com" value={newMemberEmail} disabled={!canManageTeam} title={teamReason ?? undefined} onChange={event => { setNewMemberEmail(event.target.value); setTeamError(""); }}/></label>
+        <datalist id="campaign-org-people">{ORGANISATION_PEOPLE.filter(person => !team.some(member => member.email.toLowerCase() === person.email.toLowerCase())).map(person => <option key={person.id} value={person.email} label={person.name}/>)}</datalist>
+        <label className="campaign-edit-field"><span>Role</span><select value={newMemberRole} disabled={!canManageTeam} onChange={event => setNewMemberRole(event.target.value as CampaignRecruiter["role"])}><option>Additional recruiter</option><option>Line manager</option></select></label>
+        {guard(canManageTeam, teamReason, <Button type="submit" disabled={!canManageTeam}>Add to team</Button>)}
+      </form>
+      {teamError && <p className="campaign-edit-error" role="alert">{teamError}</p>}
     </section>
 
-    <section className="surface campaign-edit-section">
+    <section className="surface campaign-edit-section" id="campaign-edit-requirements">
       <header className="campaign-edit-section-heading"><h2>Requirements</h2><p>What a candidate needs. Must-have requirements decide whether someone goes to the longlist; preferred ones help rank them. Weight 1 is low and 5 is high.</p></header>
-      {requirements.length === 0 && <p className="campaign-edit-empty">No requirements yet. Add the first one to start screening candidates.</p>}
-      <div className="campaign-requirement-editor-list">{requirements.map(requirement => <div className="campaign-requirement-editor" key={requirement.id}>
-        <label className="campaign-edit-field"><span>Requirement</span><input value={requirement.title} onChange={event => updateRequirement(requirement.id, { title: event.target.value })}/></label>
-        <label className="campaign-edit-field"><span>Category</span><select value={requirement.category} onChange={event => updateRequirement(requirement.id, { category: event.target.value })}>{["Skill", "Experience", "Qualification", "Other"].map(category => <option key={category}>{category}</option>)}</select></label>
-        <label className="campaign-edit-field"><span>Type</span><select value={requirement.kind} onChange={event => updateRequirement(requirement.id, { kind: event.target.value as CampaignRequirement["kind"] })}><option>Must-have</option><option>Preferred</option></select></label>
-        <label className="campaign-edit-field"><span>Weight</span><select value={requirement.weight} onChange={event => updateRequirement(requirement.id, { weight: Number(event.target.value) })}>{[1, 2, 3, 4, 5].map(weight => <option key={weight} value={weight}>{weight}</option>)}</select></label>
-        <Button variant="danger" onClick={() => updateCampaign({ requirements: requirements.filter(item => item.id !== requirement.id) })}>Remove</Button>
-      </div>)}</div>
-      <div className="campaign-edit-section-actions"><Button variant="secondary" onClick={addRequirement}>Add requirement</Button><Button disabled={!requirements.length || requirements.some(requirement => !requirement.title.trim())} onClick={() => saveCampaign(campaign.published, false)}>Save requirements</Button></div>
-    </section>
-
-    <section className="surface campaign-edit-section campaign-edit-form-section">
-      <header className="campaign-edit-section-heading"><h2>Application form builder</h2><p>Drag blocks to reorder, add fields, and save a candidate-ready form for this campaign.</p></header>
-      <ApplicationFormBuilder campaign={campaign} onChange={formBlocks => updateCampaign({ formBlocks })} onSaveDraft={() => saveCampaign(campaign.published, false)}/>
-    </section>
-
-    <section className="surface campaign-edit-section">
-      <header className="campaign-edit-section-heading"><h2>Campaign Evaluation</h2><p>Control how AI evaluates applicants for this campaign specifically. By default every campaign uses your organisation’s evaluation settings — override them here if this role needs different screening criteria.</p></header>
-      <div className="campaign-evaluation-options">
-        <label className={campaign.evaluationMode === "default" ? "selected" : ""}><input type="radio" name="campaign-evaluation-mode" checked={campaign.evaluationMode === "default"} onChange={() => updateCampaign({ evaluationMode: "default" })}/><span><strong>Use organisation default</strong><small>Inherit the instructions set on the Evaluations page.</small></span></label>
-        <label className={campaign.evaluationMode === "custom" ? "selected" : ""}><input type="radio" name="campaign-evaluation-mode" checked={campaign.evaluationMode === "custom"} onChange={() => updateCampaign({ evaluationMode: "custom" })}/><span><strong>Customize for this campaign</strong><small>Write instructions and enable/disable AI review just for this campaign.</small></span></label>
+      {editReason && <p className="campaign-edit-warning" role="note">{editReason}</p>}
+      {requirementRows.length === 0 && <p className="campaign-edit-empty">No requirements yet. Add the first one to start screening candidates.</p>}
+      <ol className="campaign-requirement-editor-list cw-requirement-rows">{requirementRows.map((requirement, index) => {
+        const n = index + 1;
+        const custom = requirement.category === "Custom (checked by a person)";
+        const years = requirement.category === "Years of experience";
+        return <li className="campaign-requirement-editor cw-requirement-row" key={requirement.id}>
+          <label className="campaign-edit-field"><span>Requirement</span><input aria-label={`Requirement ${n} name`} value={requirement.title} disabled={!canEdit} maxLength={200} placeholder="e.g. Valid driving licence" aria-invalid={requirementProblems[requirement.id] ? true : undefined} onChange={event => patchRequirement(requirement.id, { title: event.target.value })}/></label>
+          <label className="campaign-edit-field"><span>Type</span><select aria-label={`Requirement ${n} type`} value={CRITERION_TYPES.includes(requirement.category) ? requirement.category : "Skill"} disabled={!canEdit} onChange={event => patchRequirement(requirement.id, { category: event.target.value, value: event.target.value === "Custom (checked by a person)" ? "" : requirement.value })}>{CRITERION_TYPES.map(type => <option key={type}>{type}</option>)}</select></label>
+          <label className="campaign-edit-field"><span>What to look for</span><input aria-label={`Requirement ${n} value`} value={custom ? "" : requirement.value ?? ""} disabled={!canEdit || custom} type={years ? "number" : "text"} min={years ? 0 : undefined} max={years ? 50 : undefined} step={years ? 1 : undefined} maxLength={120} placeholder={custom ? "Checked by a person" : years ? "Years" : "e.g. Code 08"} onChange={event => patchRequirement(requirement.id, { value: event.target.value })}/></label>
+          <label className="campaign-edit-field"><span>Importance</span><select aria-label={`Requirement ${n} importance`} value={requirement.kind} disabled={!canEdit} onChange={event => patchRequirement(requirement.id, { kind: event.target.value as CampaignRequirement["kind"] })}><option>Must-have</option><option>Preferred</option></select></label>
+          <label className="campaign-edit-field"><span>Weight</span><select aria-label={`Requirement ${n} weight`} value={requirement.weight} disabled={!canEdit} onChange={event => patchRequirement(requirement.id, { weight: Number(event.target.value) })}>{[1, 2, 3, 4, 5].map(weight => <option key={weight} value={weight}>{weight}</option>)}</select></label>
+          <div className="cw-requirement-tools">
+            <button type="button" className="icon-btn" aria-label={`Move requirement ${n} up`} disabled={!canEdit || index === 0} onClick={() => moveRequirement(index, -1)}>↑</button>
+            <button type="button" className="icon-btn" aria-label={`Move requirement ${n} down`} disabled={!canEdit || index === requirementRows.length - 1} onClick={() => moveRequirement(index, 1)}>↓</button>
+            {guard(canEdit, editReason, <Button variant="danger" disabled={!canEdit} onClick={() => editRequirements(requirementRows.filter(item => item.id !== requirement.id))}>Delete</Button>)}
+          </div>
+          {requirementProblems[requirement.id] && <p className="campaign-edit-error cw-row-error" role="alert">Requirement {n}: {requirementProblems[requirement.id]}</p>}
+        </li>;
+      })}</ol>
+      <div className="campaign-edit-section-actions">
+        {guard(canEdit, editReason, <Button variant="secondary" disabled={!canEdit || requirementRows.length >= MAX_REQUIREMENTS} onClick={() => editRequirements([...requirementRows, { id: `requirement-${Date.now()}`, title: "", category: "Skill", kind: "Preferred", weight: 3, value: "" }])}>Add requirement</Button>)}
+        {guard(canEdit, editReason, <Button disabled={!canEdit || !requirementsDirty || requirementsSaving} onClick={requestRequirementsSave}>Save requirements</Button>)}
+        {requirementsDirty && <Button variant="secondary" onClick={() => { setRequirementDraft(null); setRequirementProblems({}); setConfirmRequirements(false); }}>Discard changes</Button>}
+        {requirementRows.length >= MAX_REQUIREMENTS && <span className="cw-muted">A campaign can have up to {MAX_REQUIREMENTS} requirements.</span>}
       </div>
-      {campaign.evaluationMode === "default"
-        ? <div className="campaign-evaluation-default"><span>ORGANISATION DEFAULT</span><p>Evaluate each candidate against the role requirements, relevant experience, demonstrated skills, and application quality. Identify strengths, potential gaps, and areas for human review.</p></div>
-        : <label className="campaign-edit-field campaign-evaluation-custom"><span>Campaign-specific evaluation instructions</span><textarea value={campaign.evaluationInstructions} onChange={event => updateCampaign({ evaluationInstructions: event.target.value })} placeholder="Describe the screening focus for this role. Do not include sensitive or discriminatory criteria."/></label>}
-      <Button onClick={() => saveCampaign(campaign.published, false)}>Save evaluation settings</Button>
+      {confirmRequirements && <div className="cw-confirm warning" role="alertdialog" aria-labelledby="requirements-confirm-title">
+        <strong id="requirements-confirm-title">Screening will re-run for every application on this campaign.</strong>
+        <p>Candidates are not rejected by this. Their results are checked against the new requirements and may change.</p>
+        <div><Button disabled={requirementsSaving} onClick={() => { void confirmRequirementsSave(); }}>{requirementsSaving ? "Saving…" : "Confirm and save"}</Button><Button variant="secondary" disabled={requirementsSaving} onClick={() => setConfirmRequirements(false)}>Cancel</Button></div>
+      </div>}
+      {requirementsNote && <p className="campaign-edit-saved" role="status">{requirementsNote}</p>}
     </section>
-    {deleteConfirmOpen && <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setDeleteConfirmOpen(false); }}><section className="application-dialog campaign-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="campaign-delete-title"><h2 id="campaign-delete-title">Delete campaign?</h2><p>This campaign will be moved to Deleted in this mock. You can find it under the Deleted tab.</p><div className="dialog-footer"><Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button><Button variant="danger" onClick={deleteCampaign}>Delete campaign</Button></div></section></div>}
+
+    <section className="surface campaign-edit-section campaign-edit-form-section" id="campaign-edit-form">
+      <header className="campaign-edit-section-heading"><h2>Application form builder</h2><p>Drag blocks to reorder. Save drafts anytime; publish when you are ready.</p></header>
+      <ApplicationFormBuilder campaign={campaign} onChange={formBlocks => updateCampaign({ formBlocks })} onSaveDraft={() => { void run("save", () => persist(), "Draft saved."); }}/>
+    </section>
+
+    <section className="surface campaign-edit-section" id="campaign-edit-evaluation">
+      <header className="campaign-edit-section-heading"><h2>Campaign evaluation</h2><p>Control how AI evaluates applicants for this campaign specifically. By default every campaign uses your organisation’s evaluation settings — override them here if this role needs different screening criteria.</p></header>
+      <CampaignEvaluationSection
+        key={campaign.id}
+        campaignId={campaign.id}
+        value={{ mode: campaign.evaluationMode ?? "default", instructions: campaign.evaluationInstructions ?? "", enabled: campaign.evaluationEnabled ?? true }}
+        canEdit={canEdit}
+        editReason={editReason}
+        onSave={async value => {
+          await new Promise(resolve => window.setTimeout(resolve, 400));
+          if (!campaign.title.trim()) return "Add a campaign name first, then save again.";
+          return persist({ evaluationMode: value.mode, evaluationInstructions: value.instructions, evaluationEnabled: value.enabled }) ? null : "Try again.";
+        }}
+      />
+    </section>
+    {publishOpen && <PublishCampaignDialog defaultSlug={campaign.slug || Math.random().toString(36).slice(2, 10)} onCancel={() => setPublishOpen(false)} onPublish={async slug => {
+      await new Promise(resolve => window.setTimeout(resolve, 400));
+      const saved = persist({ published: true, paused: false, archived: false, deleted: false, slug, publishedAt: campaign.publishedAt || new Date().toISOString() });
+      if (!saved) return "We could not publish the campaign. Try again.";
+      appendCampaignActivity(campaign.id, "campaign.published", actor.name);
+      setPublishOpen(false);
+      setSaveMessage("Campaign published.");
+      return null;
+    }}/>}
+    {deleteConfirmOpen && <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setDeleteConfirmOpen(false); }}><section className="application-dialog campaign-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="campaign-delete-title"><h2 id="campaign-delete-title">Delete campaign?</h2><p>This campaign will be moved to Deleted. You can restore it from the editor or find it under the Deleted tab.</p><div className="dialog-footer"><Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button><Button variant="danger" onClick={() => { setDeleteConfirmOpen(false); void run("delete", () => persist({ deleted: true, archived: false, published: false, paused: false }), "Campaign deleted.", () => go("/recruiter/campaigns")); }}>Delete campaign</Button></div></section></div>}
   </div>;
 }
 
@@ -1761,11 +1200,11 @@ function RichTextEditor({ value, onChange }: { value: string; onChange: (value: 
       ].map(([command, label, title]) => <button type="button" key={command} title={title} aria-label={title} className={`format-${command}`} onMouseDown={event => event.preventDefault()} onClick={() => applyFormat(command)}>{label}</button>)}
     </div>
     <div ref={editorRef} className="rich-text-content" contentEditable role="textbox" aria-label="Role description" aria-multiline="true" data-placeholder="Describe the role, responsibilities, and what success looks like…" onInput={event => onChange(event.currentTarget.innerHTML)}/>
-  </div><span className="field-helper">Use the toolbar to format the role description candidates will see.</span></label>;
+  </div><span className="field-helper">Use the toolbar to format the role description candidates will see. Drag the bottom-right corner to make the box bigger or smaller.</span></label>;
 }
 
 type FormBlockType = "heading" | "divider" | "richText" | "shortAnswer" | "paragraph" | "fileUpload" | "dropdown" | "multipleChoice" | "datePicker";
-type FormBlock = { id: string; type: FormBlockType; label: string; placeholder: string; isRequired: boolean; options: string[]; metadata: { maxLength?: number; acceptedTypes?: string; helpText?: string } };
+type FormBlock = { id: string; type: FormBlockType; label: string; placeholder: string; isRequired: boolean; options: string[]; metadata: { maxLength?: number; acceptedTypes?: string; helpText?: string; headingStyle?: "page" | "section" } };
 type PreviewViewport = "phone" | "tablet" | "desktop";
 
 const blockPalette: Array<{ type: FormBlockType; label: string; icon: IconName }> = [
@@ -1853,8 +1292,9 @@ function ApplicationFormBuilder({ campaign, onChange, onSaveDraft }: { campaign:
           </div>)}
         </div>
         {selectedBlock && <div className="block-settings"><div className="settings-heading"><div><span className="eyebrow">Field settings</span><h3>{selectedBlock.label || "Untitled field"}</h3></div><button className="icon-btn" onClick={() => setSelectedId(null)} aria-label="Close field settings"><Icon name="close"/></button></div>
-          {selectedBlock.type !== "heading" && selectedBlock.type !== "divider" && <><label className="setting-toggle"><span><strong>Required field</strong><small>Candidate must complete this field.</small></span><button className={`toggle ${selectedBlock.isRequired ? "on" : ""}`} onClick={() => updateBlock(selectedBlock.id, { isRequired: !selectedBlock.isRequired })} aria-label="Toggle required field"><span/></button></label>
-          {selectedBlock.type === "shortAnswer" && <label className="field"><span className="field-label">Maximum characters</span><input className="setting-input" type="number" value={selectedBlock.metadata.maxLength || ""} onChange={event => updateMetadata(selectedBlock.id, { maxLength: Number(event.target.value) })}/></label>}
+          {selectedBlock.type === "heading" && <label className="field"><span className="field-label">Heading style</span><select className="setting-input" value={selectedBlock.metadata.headingStyle ?? "section"} onChange={event => updateMetadata(selectedBlock.id, { headingStyle: event.target.value as "page" | "section" })}><option value="page">Page title (hero)</option><option value="section">Section heading</option></select></label>}
+          {selectedBlock.type !== "heading" && selectedBlock.type !== "divider" && <><label className="field"><span className="field-label">Label</span><input className="setting-input" value={selectedBlock.label} onChange={event => updateBlock(selectedBlock.id, { label: event.target.value })}/></label><label className="setting-toggle"><span><strong>Required field</strong><small>Candidate must complete this field.</small></span><button className={`toggle ${selectedBlock.isRequired ? "on" : ""}`} onClick={() => updateBlock(selectedBlock.id, { isRequired: !selectedBlock.isRequired })} aria-label="Toggle required field"><span/></button></label>
+          {(selectedBlock.type === "shortAnswer" || selectedBlock.type === "paragraph" || selectedBlock.type === "richText") && <label className="field"><span className="field-label">Max length</span><input className="setting-input" type="number" value={selectedBlock.metadata.maxLength || ""} onChange={event => updateMetadata(selectedBlock.id, { maxLength: Number(event.target.value) })}/></label>}
           {selectedBlock.type === "fileUpload" && <label className="field"><span className="field-label">Accepted file types</span><input className="setting-input" value={selectedBlock.metadata.acceptedTypes || ""} onChange={event => updateMetadata(selectedBlock.id, { acceptedTypes: event.target.value })}/></label>}
           {(selectedBlock.type === "dropdown" || selectedBlock.type === "multipleChoice") && <label className="field"><span className="field-label">Options</span><textarea className="setting-textarea" value={selectedBlock.options.join("\n")} onChange={event => updateBlock(selectedBlock.id, { options: event.target.value.split("\n") })}/><span className="field-helper">Use one option per line.</span></label>}
           <label className="field"><span className="field-label">Help text</span><input className="setting-input" placeholder="Optional guidance for candidates" value={selectedBlock.metadata.helpText || ""} onChange={event => updateMetadata(selectedBlock.id, { helpText: event.target.value })}/></label></>}
@@ -1871,7 +1311,7 @@ function ApplicationFormBuilder({ campaign, onChange, onSaveDraft }: { campaign:
 
 function PreviewBlock({ block }: { block: FormBlock }) {
   if (block.type === "divider") return <hr className="preview-divider"/>;
-  if (block.type === "heading") return <h3 className="preview-heading">{block.label}</h3>;
+  if (block.type === "heading") return block.metadata.headingStyle === "page" ? <h2 className="preview-heading preview-heading-page">{block.label}</h2> : <h3 className="preview-heading">{block.label}</h3>;
   if (block.type === "paragraph" || block.type === "richText") return <label className="preview-field"><span>{block.label}{block.isRequired && <b>*</b>}</span><textarea placeholder={block.placeholder}/></label>;
   if (block.type === "fileUpload") return <label className="preview-field"><span>{block.label}{block.isRequired && <b>*</b>}</span><span className="preview-file"><Icon name="upload" size={15}/>{block.placeholder}</span></label>;
   if (block.type === "dropdown") return <label className="preview-field"><span>{block.label}{block.isRequired && <b>*</b>}</span><select defaultValue=""><option value="" disabled>{block.placeholder}</option>{block.options.map(option => <option key={option}>{option}</option>)}</select></label>;
@@ -1881,18 +1321,25 @@ function PreviewBlock({ block }: { block: FormBlock }) {
 
 function EvaluationsPage() {
   const [view, setView] = useState<RoleView>(() => getRouteRoleView("owner"));
-  const [enabled, setEnabled] = useState(true);
+  const [settings, setSettings] = useState(readOrganisationEvaluation);
+  const [saveMessage, setSaveMessage] = useState("");
   const readOnly = view === "recruiter";
   const setRoleView = (next: RoleView) => {
     setView(next);
     updateRouteRoleView(next);
   };
-  return <div className="narrow-page"><PageHeader eyebrow="Workspace settings" title="AI evaluations" description="Set consistent criteria to help your team review applications. AI supports — it never replaces — human judgement." action={<div className="settings-actions"><ViewAsSwitcher value={view} onChange={setRoleView}/>{!readOnly && <Button>Save changes</Button>}</div>}/>
+  const update = (changes: Partial<typeof settings>) => {
+    setSettings(current => ({ ...current, ...changes }));
+    setSaveMessage("");
+  };
+  const save = () => setSaveMessage(saveOrganisationEvaluation(settings) ? "Saved. Campaigns that use the organisation default now follow these settings." : "Settings could not be saved in this browser. Please try again.");
+  return <div className="narrow-page"><PageHeader eyebrow="Workspace settings" title="AI evaluations" description="Set consistent criteria to help your team review applications. AI supports — it never replaces — human judgement." action={<div className="settings-actions"><ViewAsSwitcher value={view} onChange={setRoleView}/>{!readOnly && <Button onClick={save}>Save changes</Button>}</div>}/>
     {readOnly && <div className="read-only-banner">Only the owner can change these settings.</div>}
+    {saveMessage && <p className="campaign-edit-saved" role="status">{saveMessage}</p>}
     <div className="notice"><Icon name="sparkles"/><div><strong>Human decisions come first</strong><p>Evaluation scores are recommendations. Your team remains responsible for every recruitment decision.</p></div></div>
-    <section className="settings-section"><div className="setting-row"><div><h2>Candidate evaluations</h2><p>Automatically evaluate new applications against your workspace criteria.</p></div><button className={`toggle ${enabled ? "on" : ""}`} onClick={() => setEnabled(!enabled)} aria-label="Toggle evaluations" disabled={readOnly} aria-checked={enabled} role="switch"><span/></button></div>
-      <div className="form-divider"/><label className="field field-full"><span className="field-label">Base evaluation criteria</span><textarea className="tall" defaultValue={"Evaluate each candidate against the role requirements, relevant experience, demonstrated skills, and application quality. Identify strengths, potential gaps, and areas for human review."} readOnly={readOnly} disabled={readOnly}/><span className="field-helper">Applied to every active campaign unless campaign-specific instructions are added.</span></label>
-      <label className="field field-full"><span className="field-label">Custom workspace instructions</span><textarea className="tall" placeholder="Add context unique to your organisation…" readOnly={readOnly} disabled={readOnly}/><span className="field-helper">Avoid including sensitive personal attributes or discriminatory criteria.</span></label>
+    <section className="settings-section"><div className="setting-row"><div><h2>Candidate evaluations</h2><p>Automatically evaluate new applications against your workspace criteria. Each campaign uses this by default and can override it.</p></div><button className={`toggle ${settings.enabled ? "on" : ""}`} onClick={() => update({ enabled: !settings.enabled })} aria-label="Toggle evaluations" disabled={readOnly} aria-checked={settings.enabled} role="switch"><span/></button></div>
+      <div className="form-divider"/><label className="field field-full"><span className="field-label">Base prompt (read-only)</span><textarea className="tall" value={DEFAULT_AI_EVALUATION_INSTRUCTIONS} readOnly/></label>
+      <label className="field field-full"><span className="field-label">Organisation instructions</span><textarea className="tall" value={settings.customInstructions ?? ""} maxLength={MAX_EVALUATION_INSTRUCTIONS} placeholder="Add context unique to your organisation…" readOnly={readOnly} disabled={readOnly} onChange={event => update({ customInstructions: event.target.value })}/><span className="field-helper">{(settings.customInstructions ?? "").length} / {MAX_EVALUATION_INSTRUCTIONS}. Avoid including sensitive personal attributes or discriminatory criteria.</span></label>
     </section>
   </div>;
 }
@@ -2515,6 +1962,7 @@ function App() {
     if (path.includes("access-review")) return <AuthPage kind="access"/>;
     if (path.includes("workspace-unavailable")) return <AuthPage kind="unavailable"/>;
     if (path === "/style-guide") return <StyleGuidePage/>;
+    if (/^\/reference\/[^/]+$/.test(path)) return <RefereeFormPage token={decodeURIComponent(path.split("/").pop() || "")}/>;
     if (path.startsWith("/approver")) return <ApproverPage/>;
     if (path.startsWith("/candidate")) {
       let page: React.ReactNode = <CandidateDashboard/>;
