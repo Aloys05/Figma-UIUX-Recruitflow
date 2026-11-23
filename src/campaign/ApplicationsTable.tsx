@@ -66,13 +66,15 @@ function inSection(application: WorkspaceApplication, section: TableSection, kno
 
 const reviewTone = (status: string) => status === "Returned for revision" ? "info" : status === "Under review" || status === "Reviewed" ? "success" : "neutral";
 
-export default function ApplicationsTable({ section, store, requirements, actor, approvers, offerStatusFor }: {
+export default function ApplicationsTable({ section, store, requirements, actor, approvers, offerStatusFor, blockedReason = null }: {
   section: TableSection;
   store: CampaignWorkspaceStore;
   requirements: readonly WorkspaceRequirement[];
   actor: CampaignActor;
   approvers: readonly ApproverOption[];
   offerStatusFor: (applicationId: string) => string | null;
+  /** Why proposing is blocked right now, for example no approver. */
+  blockedReason?: string | null;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialog, setDialog] = useState<"reject" | "override" | "compare" | "tag" | "propose" | null>(null);
@@ -202,7 +204,7 @@ export default function ApplicationsTable({ section, store, requirements, actor,
     <div className="campaign-table-bulkbar cw-bulkbar">
       <label><input type="checkbox" checked={allSelected} ref={element => { if (element) element.indeterminate = selectedRows.length > 0 && selectedRows.length < filtered.length; }} onChange={toggleAll}/>Select all {filtered.length} matching</label>
       <span>{selected.size} selected</span>
-      {section === "longlist" && <GuardedButton role={actor.role} action="propose" variant="primary" disabled={none} onClick={() => setDialog("propose")}>Propose shortlist</GuardedButton>}
+      {section === "longlist" && <GuardedButton role={actor.role} action="propose" extraBlock={blockedReason} variant="primary" disabled={none} onClick={() => setDialog("propose")}>Propose shortlist</GuardedButton>}
       {section !== "rejected" && <GuardedButton role={actor.role} action="reject" variant="danger" disabled={none} onClick={() => setDialog("reject")}>Reject selected</GuardedButton>}
       {section === "below-requirements" && <GuardedButton role={actor.role} action="manageLonglist" disabled={none} onClick={() => setDialog("override")}>Override to Longlist</GuardedButton>}
       {section === "rejected" && <GuardedButton role={actor.role} action="reject" disabled={none} onClick={() => { store.returnRejectedToLonglist([...selected], actor); setSelected(new Set()); }}>Return to Longlist</GuardedButton>}

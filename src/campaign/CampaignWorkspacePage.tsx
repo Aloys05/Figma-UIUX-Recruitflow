@@ -13,8 +13,9 @@ import PipelineBoard from "./PipelineBoard";
 import ShortlistsTab from "./ShortlistsTab";
 import { ROLE_LABEL, actorForRole, canPerform, setMockCampaignRole, useMockCampaignRole, type CampaignActor, type CampaignRole } from "./permissions";
 import { campaignTeamOf, type CampaignTeamInput } from "./team";
+import { openInviteFor } from "./approverInvites";
 import { useCampaignWorkspaceStore, type CampaignWorkspaceStore, type WorkspaceRequirement } from "./workspaceStore";
-import { GuardedButton, Toast, type ApproverOption } from "./workspaceUi";
+import { GuardedButton, NO_APPROVER_MESSAGE, NoApproverWarning, Toast, type ApproverOption } from "./workspaceUi";
 
 export type WorkspaceCampaign = CampaignTeamInput & {
   id: string;
@@ -98,6 +99,8 @@ export default function CampaignWorkspacePage({ campaign: initialCampaign, descr
   const state = lifecycleOf(campaign);
   const canOwn = canPerform(role, "editCampaign").allowed && canPerform(role, "changeLifecycle").allowed;
   const hasApprover = team.some(member => member.role === "Line manager");
+  const noApproverReason = hasApprover ? null : NO_APPROVER_MESSAGE;
+  const pendingInvite = useMemo(() => hasApprover ? null : openInviteFor(campaign.id), [hasApprover, campaign.id]);
   const today = new Date().toISOString().slice(0, 10);
   const accepting = state === "published" && (!campaign.closingDate || campaign.closingDate >= today);
   const applyLink = state === "draft" ? "" : publicUrl(campaign);
@@ -219,11 +222,6 @@ export default function CampaignWorkspacePage({ campaign: initialCampaign, descr
         </div>
       </div>
       {store.error && <p className="demo-storage-error" role="alert">{store.error}</p>}
-      {!hasApprover && <div className="cw-approver-warning" role="alert">
-        <Icon name="clock" size={18}/>
-        <div><strong>No approver yet</strong><p>Shortlists and offers cannot be approved until a line manager is on the campaign team.</p></div>
-        {canOwn && <Button variant="secondary" onClick={() => onEdit("campaign-edit-team")}>Add a line manager</Button>}
-      </div>}
 
       <section className="cw-link-row" aria-label="Public apply link">
         <span className="cw-link-icon"><Icon name="external" size={18}/></span>
@@ -262,12 +260,13 @@ export default function CampaignWorkspacePage({ campaign: initialCampaign, descr
         <h2 id="workspace-panel-title">{tabLabel}</h2>
         <Toast message={store.toast} onDismiss={store.dismissToast}/>
         <div className="cw-panel-body">
+          {!hasApprover && (activeTab === "overview" || activeTab === "shortlists" || activeTab === "offers") && <NoApproverWarning pendingInvite={pendingInvite} onOpenTeam={() => onEdit("campaign-edit-team")}/>}
           {activeTab === "overview" && <OverviewTab data={store.data} requirements={requirements} onOpenShortlists={() => selectTab("shortlists")} onEditRequirements={() => onEdit("campaign-edit-requirements")}/>}
           {activeTab === "pipeline" && <PipelineBoard store={store} requirements={requirements} actor={actor} offerStatusFor={offerStatusFor} onOpenWorkflow={openWorkflow}/>}
-          {(activeTab === "longlist" || activeTab === "below-requirements" || activeTab === "rejected") && <ApplicationsTable section={activeTab} store={store} requirements={requirements} actor={actor} approvers={approvers} offerStatusFor={offerStatusFor}/>}
-          {activeTab === "shortlists" && <ShortlistsTab store={store} requirements={requirements} actor={actor} approvers={approvers} offerStatusFor={offerStatusFor} onOpenOverview={() => selectTab("overview")}/>}
+          {(activeTab === "longlist" || activeTab === "below-requirements" || activeTab === "rejected") && <ApplicationsTable section={activeTab} store={store} requirements={requirements} actor={actor} approvers={approvers} offerStatusFor={offerStatusFor} blockedReason={noApproverReason}/>}
+          {activeTab === "shortlists" && <ShortlistsTab store={store} requirements={requirements} actor={actor} approvers={approvers} offerStatusFor={offerStatusFor} onOpenOverview={() => selectTab("overview")} blockedReason={noApproverReason}/>}
           {activeTab === "references" && <CampaignReferencesTab campaignId={campaign.id} roleTitle={roleTitle} candidates={workflowCandidates} onMoveCandidate={(id, stage) => store.setStageFromWorkflow(id, stage, actor)} onSelectCandidate={setProfileFromWorkflow} viewer={viewer} focusCandidateId={focusApplication}/>}
-          {activeTab === "offers" && <CampaignOffersTab campaignId={campaign.id} roleTitle={roleTitle} candidates={workflowCandidates} onMoveCandidate={(id, stage) => store.setStageFromWorkflow(id, stage, actor)} onSelectCandidate={setProfileFromWorkflow} viewer={viewer} focusCandidateId={focusApplication} onOfferSent={(id, offer) => store.queueOfferEmail(id, offerSummary(offer))}/>}
+          {activeTab === "offers" && <CampaignOffersTab campaignId={campaign.id} roleTitle={roleTitle} candidates={workflowCandidates} onMoveCandidate={(id, stage) => store.setStageFromWorkflow(id, stage, actor)} onSelectCandidate={setProfileFromWorkflow} viewer={viewer} focusCandidateId={focusApplication} onOfferSent={(id, offer) => store.queueOfferEmail(id, offerSummary(offer))} submitBlockedReason={noApproverReason}/>}
           {activeTab === "messages" && <MessagesTab store={store} actor={actor}/>}
           {activeTab === "export" && <ExportTab campaignTitle={roleTitle} data={store.data} requirements={requirements} actor={actor} onDownloaded={() => store.logActivity("campaign.exported", actor)}/>}
         </div>

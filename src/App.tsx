@@ -4,7 +4,11 @@ import RefereeFormPage from "./RefereeFormPage";
 import CampaignWorkspacePage from "./campaign/CampaignWorkspacePage";
 import { PublishCampaignDialog } from "./campaign/CampaignStatusDialog";
 import { actorForRole, canPerform, useMockCampaignRole } from "./campaign/permissions";
-import { ORGANISATION_PEOPLE, campaignTeamOf } from "./campaign/team";
+import { DEFAULT_CAMPAIGN_TEAM, campaignTeamOf } from "./campaign/team";
+import CampaignTeamSection from "./campaign/CampaignTeamSection";
+import ApproverInvitePage from "./ApproverInvitePage";
+import { markInviteAccepted, type ApproverInvite } from "./campaign/approverInvites";
+import { reassignPendingShortlists } from "./campaign/workspaceStore";
 import { appendCampaignActivity } from "./campaign/workspaceStore";
 import CampaignEvaluationSection from "./campaign/CampaignEvaluationSection";
 import { DEFAULT_AI_EVALUATION_INSTRUCTIONS, MAX_EVALUATION_INSTRUCTIONS, readOrganisationEvaluation, saveOrganisationEvaluation } from "./campaign/evaluation";
@@ -831,12 +835,13 @@ function createDraftCampaign(): DemoCampaign {
     summary: "",
     employmentType: "",
     experienceLevel: "",
+    campaignTeam: [{ ...DEFAULT_CAMPAIGN_TEAM[0] }],
+    approver: null,
   };
 }
 
 const CRITERION_TYPES = ["Skill", "Years of experience", "Qualification", "Document", "Licence", "Location", "Availability", "Language", "Custom (checked by a person)"];
 const MAX_REQUIREMENTS = 30;
-const LAST_MAIN_RECRUITER_REASON = "A campaign must always have a main recruiter. Make someone else the main recruiter first.";
 
 function requirementProblem(requirement: CampaignRequirement): string | null {
   if (!requirement.title.trim()) return "Give the requirement a name.";
@@ -859,11 +864,8 @@ function requirementProblem(requirement: CampaignRequirement): string | null {
 function CampaignEditor({ campaignId }: { campaignId: string }) {
   const role = useMockCampaignRole();
   const editPermission = canPerform(role, "editCampaign");
-  const teamPermission = canPerform(role, "manageTeam");
   const canEdit = editPermission.allowed;
-  const canManageTeam = teamPermission.allowed;
   const editReason = editPermission.allowed ? null : editPermission.reason;
-  const teamReason = teamPermission.allowed ? null : teamPermission.reason;
   const [campaign, setCampaign] = useState<DemoCampaign>(() => {
     const savedCampaign = campaignId === "new" ? createDraftCampaign() : getCampaignDetails(campaignId) ?? createDraftCampaign();
     return {
@@ -891,11 +893,6 @@ function CampaignEditor({ campaignId }: { campaignId: string }) {
   const [confirmRequirements, setConfirmRequirements] = useState(false);
   const [requirementsSaving, setRequirementsSaving] = useState(false);
   const [requirementsNote, setRequirementsNote] = useState("");
-  const [newMemberEmail, setNewMemberEmail] = useState("");
-  const [newMemberRole, setNewMemberRole] = useState<CampaignRecruiter["role"]>("Additional recruiter");
-  const [teamError, setTeamError] = useState("");
-  const [handover, setHandover] = useState<CampaignRecruiter | null>(null);
-  const [removing, setRemoving] = useState<CampaignRecruiter | null>(null);
 
   useEffect(() => {
     if (!window.location.hash) return;
@@ -944,7 +941,6 @@ function CampaignEditor({ campaignId }: { campaignId: string }) {
   const requirementRows = requirementDraft ?? savedRequirements;
   const requirementsDirty = requirementDraft !== null;
   const team = campaign.campaignTeam || [];
-  const mainRecruiter = team.find(member => member.role === "Main recruiter");
 
   const startPublish = () => {
     const missing = [!campaign.department.trim() ? "Service category" : null, !campaign.workArrangement.trim() ? "Work arrangement" : null].filter(Boolean);
@@ -996,46 +992,14 @@ function CampaignEditor({ campaignId }: { campaignId: string }) {
   };
 
   const saveTeam = (next: CampaignRecruiter[], action: "campaign.member_added" | "campaign.member_role_changed" | "campaign.member_removed") => {
-    if (persist({ campaignTeam: next })) {
-      appendCampaignActivity(campaign.id, action, actor.name);
-      setTeamError("");
-    } else {
-      setTeamError("That did not work. Try again.");
-    }
-  };
-  const changeRole = (member: CampaignRecruiter, nextRole: CampaignRecruiter["role"]) => {
-    setTeamError("");
-    if (nextRole === member.role) return;
-    if (nextRole === "Main recruiter") {
-      setHandover(member);
-      return;
-    }
-    saveTeam(team.map(item => item.id === member.id ? { ...item, role: nextRole } : item), "campaign.member_role_changed");
-  };
-  const addMember = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!canManageTeam) return;
-    const email = newMemberEmail.trim().toLowerCase();
-    if (!email) {
-      setTeamError("Enter the person's work email.");
-      return;
-    }
-    const person = ORGANISATION_PEOPLE.find(item => item.email.toLowerCase() === email);
-    if (!person) {
-      setTeamError("No one in your organisation has that email. Only people in your organisation can be added.");
-      return;
-    }
-    if (team.some(member => member.email.toLowerCase() === email)) {
-      setTeamError("That person is already on this campaign.");
-      return;
-    }
-    saveTeam([...team, { id: person.id, name: person.name, email: person.email, role: newMemberRole }], "campaign.member_added");
-    setNewMemberEmail("");
+    if (!persist({ campaignTeam: next })) return false;
+    appendCampaignActivity(campaign.id, action, actor.name);
+    return true;
   };
 
   const editSections = [
     ["campaign-edit-details", "Job board details"],
-    ["campaign-edit-team", "Campaign team"],
+    ["campaign-edit-team", "Team"],
     ["campaign-edit-requirements", "Requirements"],
     ["campaign-edit-form", "Application form"],
     ["campaign-edit-evaluation", "Evaluation"],
@@ -1077,34 +1041,8 @@ function CampaignEditor({ campaignId }: { campaignId: string }) {
     </section>
 
     <section className="surface campaign-edit-section" id="campaign-edit-team">
-      <header className="campaign-edit-section-heading"><h2>Campaign team</h2><p>Recruiters from your organisation work on this campaign; only they and the organisation owner can see it. The line manager signs off the shortlist and the offer. Only the main recruiter or an administrator can change the team.</p></header>
-      {teamReason && <p className="campaign-edit-warning" role="note">{teamReason}</p>}
-      <div className="campaign-team-list">{team.map(member => {
-        const isMain = member.role === "Main recruiter";
-        return <div className="campaign-team-row" key={member.id}>
-          <div><strong>{member.name}</strong><small>{member.email}</small></div>
-          <select aria-label={`Role for ${member.name}`} title={isMain ? LAST_MAIN_RECRUITER_REASON : teamReason ?? undefined} value={member.role} disabled={!canManageTeam || isMain} onChange={event => changeRole(member, event.target.value as CampaignRecruiter["role"])}><option>Main recruiter</option><option>Additional recruiter</option><option>Line manager</option></select>
-          {guard(canManageTeam && !isMain, isMain ? LAST_MAIN_RECRUITER_REASON : teamReason, <Button variant="danger" disabled={!canManageTeam || isMain} onClick={() => { setTeamError(""); setRemoving(member); }}>Remove</Button>)}
-          {isMain && canManageTeam && <small className="cw-team-note">{LAST_MAIN_RECRUITER_REASON}</small>}
-        </div>;
-      })}</div>
-      {handover && <div className="cw-confirm warning" role="alertdialog" aria-labelledby="team-handover-title">
-        <strong id="team-handover-title">Make {handover.name} the main recruiter?</strong>
-        <p>{mainRecruiter ? `${mainRecruiter.name} will become an additional recruiter.` : "They will become the main recruiter."}</p>
-        <div><Button onClick={() => { saveTeam(team.map(item => item.id === handover.id ? { ...item, role: "Main recruiter" } : item.role === "Main recruiter" ? { ...item, role: "Additional recruiter" } : item), "campaign.member_role_changed"); setHandover(null); }}>Make main recruiter</Button><Button variant="secondary" onClick={() => setHandover(null)}>Cancel</Button></div>
-      </div>}
-      {removing && <div className="cw-confirm danger" role="alertdialog" aria-labelledby="team-remove-title">
-        <strong id="team-remove-title">Remove {removing.name} from this campaign?</strong>
-        <p>They will only be able to view the campaign.</p>
-        <div><Button variant="danger" onClick={() => { saveTeam(team.filter(item => item.id !== removing.id), "campaign.member_removed"); setRemoving(null); }}>Yes, remove</Button><Button variant="secondary" onClick={() => setRemoving(null)}>Cancel</Button></div>
-      </div>}
-      <form className="campaign-edit-add-row cw-team-add" aria-label="Add a team member" onSubmit={addMember}>
-        <label className="campaign-edit-field"><span>Work email</span><input type="email" list="campaign-org-people" autoComplete="off" placeholder="name@yourcompany.com" value={newMemberEmail} disabled={!canManageTeam} title={teamReason ?? undefined} onChange={event => { setNewMemberEmail(event.target.value); setTeamError(""); }}/></label>
-        <datalist id="campaign-org-people">{ORGANISATION_PEOPLE.filter(person => !team.some(member => member.email.toLowerCase() === person.email.toLowerCase())).map(person => <option key={person.id} value={person.email} label={person.name}/>)}</datalist>
-        <label className="campaign-edit-field"><span>Role</span><select value={newMemberRole} disabled={!canManageTeam} onChange={event => setNewMemberRole(event.target.value as CampaignRecruiter["role"])}><option>Additional recruiter</option><option>Line manager</option></select></label>
-        {guard(canManageTeam, teamReason, <Button type="submit" disabled={!canManageTeam}>Add to team</Button>)}
-      </form>
-      {teamError && <p className="campaign-edit-error" role="alert">{teamError}</p>}
+      <header className="campaign-edit-section-heading"><h2>Team</h2><p>Who works on this role. The main recruiter runs the campaign, additional recruiters help screen, and the approver decides the shortlist and the offer.</p></header>
+      <CampaignTeamSection campaignId={campaign.id} campaignTitle={campaign.title} organisation="Northstar Labs" team={team} actorName={actor.name} onSaveTeam={saveTeam}/>
     </section>
 
     <section className="surface campaign-edit-section" id="campaign-edit-requirements">
@@ -1947,6 +1885,23 @@ function PublicApplication({ campaignId }: { campaignId: string }) {
   return <div className="application-public"><header className="application-header"><div className="employer-brand"><span className="company-logo logo-blue">OS</span><span><strong>Orbit Systems</strong><small>Powered by RecruitFlow</small></span></div><span className="secure"><Icon name="lock" size={14}/> Secure application</span></header><main className="application-form-page"><div className="application-cover" aria-hidden="true"><img src={asset("assets/workplaces/office-3.jpg")} alt="" /><div className="application-cover-overlay"><img src={asset("assets/recruitflow-logo.png")} alt="" /></div></div><div className="role-intro"><Badge tone="success">Applications open</Badge><h1>{campaign.title}</h1><div className="job-meta"><span><Icon name="location" size={15}/>{campaign.location}</span><span><Icon name="briefcase" size={15}/>{campaign.workArrangement} · {campaign.employmentType}</span></div><CampaignRoleDescription campaign={campaign} className="role-description-display"/></div><div className="application-columns"><aside><h2>Your application</h2>{steps.map((x, i) => <div className={i === step ? "current" : i < step ? "complete" : ""} key={x}><span>{i < step ? <Icon name="check" size={13}/> : i + 1}</span>{x}</div>)}</aside><section className="form-page"><form onSubmit={submit}><div className="form-heading"><div><h2>{steps[step]}</h2><p>{step === 0 ? "Tell the hiring team how they can reach you." : step === 1 ? "Share the experience that makes you a strong fit." : step === 2 ? "Add the documents the hiring team will review." : "A final note helps us understand your motivation."}</p></div></div>{step === 0 && <><div className="form-grid"><Field label="First name" placeholder="Your first name" required/><Field label="Last name" placeholder="Your last name" required/><Field label="Email address" icon="mail" placeholder="you@example.com" type="email" required/><Field label="Phone number" placeholder="+27" required/></div><Field label="Current location" icon="location" placeholder="City, country" required/></>}{step === 1 && <><Field label="Portfolio URL" icon="external" placeholder="https://yourportfolio.com" required/><label className="field"><span className="field-label">Years of experience</span><select className="review-select" required><option value="">Select an option</option><option>1–2 years</option><option>3–5 years</option><option>5+ years</option></select></label><label className="field"><span className="field-label">What kind of work energises you?</span><textarea placeholder="Tell us about the products or problems you enjoy working on…" required/></label></>}{step === 2 && <label className="file-field"><span className="field-label">CV or resume <span aria-hidden="true">*</span></span><span className="file-input"><Icon name="upload" size={17}/><input type="file" accept=".pdf,.doc,.docx" required={!cvFile} onChange={event => { setCvFile(event.target.files?.[0] || null); setSubmitError(""); }}/><span>{cvFile?.name || "Choose a PDF or Word document"}</span></span><span className="field-helper">Demo mode saves the filename only; your file is not uploaded.</span></label>}{step === 3 && <><label className="field"><span className="field-label">Cover letter <span aria-hidden="true">*</span></span><textarea value={coverLetter} onChange={event => { setCoverLetter(event.target.value); setSubmitError(""); }} placeholder={`Tell Orbit Systems why you’re excited about this role…`} required/></label><label className="field"><span className="field-label">When could you start?</span><select className="review-select"><option>Immediately</option><option>Within one month</option><option>Within three months</option></select></label></>}{submitError && <p className="demo-storage-error" role="alert">{submitError}</p>}<div className="form-footer"><span>Step {step + 1} of {steps.length}</span><div>{step > 0 && <Button variant="secondary" onClick={() => { setSubmitError(""); setStep(current => current - 1); }}>Back</Button>}{step < steps.length - 1 ? <Button type="submit">Continue <Icon name="arrow" size={15}/></Button> : <Button type="submit">Submit application</Button>}</div></div></form></section></div></main></div>;
 }
 
+/** The invitee accepted: they become the campaign's approver and waiting shortlists move to them. */
+function acceptApproverIntoCampaign(invite: ApproverInvite): boolean {
+  if (invite.campaignId === "demo") return true;
+  const accepted = markInviteAccepted(invite.token);
+  if (!accepted) return false;
+  const stored = invite.campaignId === "1" ? readDemoCampaign() : getCampaignDetails(invite.campaignId);
+  if (stored) {
+    const approverId = `line-manager-${invite.email.toLowerCase()}`;
+    const team = campaignTeamOf(stored).filter(member => member.role !== "Line manager");
+    const next: DemoCampaign = { ...stored, campaignTeam: [...team, { id: approverId, name: invite.name, email: invite.email, role: "Line manager" }], approver: { name: invite.name, email: invite.email } };
+    if (!(invite.campaignId === "1" ? saveDemoCampaign(next) : saveCreatedCampaign(next))) return false;
+    reassignPendingShortlists(invite.campaignId, { id: approverId, name: invite.name });
+  }
+  appendCampaignActivity(invite.campaignId, "campaign.approver_accepted", invite.name);
+  return true;
+}
+
 function App() {
   const [path, setPath] = useState(getAppPath);
   useEffect(() => { const handler = () => setPath(getAppPath()); window.addEventListener("popstate", handler); return () => window.removeEventListener("popstate", handler); }, []);
@@ -1956,6 +1911,7 @@ function App() {
     if (path === "/create-account") return <AuthPage kind="signup"/>;
     if (path === "/forgot-password") return <AuthPage kind="forgot"/>;
     if (path === "/reset-password") return <AuthPage kind="reset"/>;
+    if (/^\/approver-invite\/[^/]+$/.test(path)) return <ApproverInvitePage token={decodeURIComponent(path.split("/").pop() || "")} onAccepted={acceptApproverIntoCampaign}/>;
     if (path.includes("invitation")) return <AuthPage kind="invite"/>;
     if (path.includes("public/campaign")) return <AuthPage kind="apply"/>;
     if (path.includes("application-confirmation") && !path.startsWith("/candidate/")) return <AuthPage kind="thanks"/>;

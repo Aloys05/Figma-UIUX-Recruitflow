@@ -299,6 +299,16 @@ export function saveReferencesOffers(campaignId: string, data: ReferencesOffersD
   }
 }
 
+/** Offers on this campaign waiting for approval, without seeding demo data. */
+export function countPendingOffers(campaignId: string): number {
+  try {
+    const stored = readAll()[campaignId];
+    return isData(stored) ? stored.offers.filter(offer => offer.status === "pending").length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function loadReferencesOffers(campaignId: string, roleTitle: string): { data: ReferencesOffersData; error: string | null } {
   try {
     const stored = readAll()[campaignId];

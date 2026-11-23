@@ -56,6 +56,21 @@ export function GuardedButton({ role, action, extraBlock, children, variant = "s
   </span>;
 }
 
+export const NO_APPROVER_MESSAGE = "This campaign has no approver yet. Invite one before proposing a shortlist or submitting an offer.";
+
+/** Shown on the overview, shortlist and offers areas while the campaign has no approver. */
+export function NoApproverWarning({ onOpenTeam, pendingInvite }: { onOpenTeam: () => void; pendingInvite?: { name: string; email: string } | null }) {
+  return <div className="cw-approver-warning ct-no-approver" role="status">
+    <Icon name="user" size={18}/>
+    <div>
+      <strong>No approver yet</strong>
+      <p>{NO_APPROVER_MESSAGE}</p>
+      {pendingInvite && <p className="ct-no-approver-pending">An invitation to {pendingInvite.name} ({pendingInvite.email}) is waiting to be accepted.</p>}
+    </div>
+    <button type="button" className="campaign-inline-link" onClick={onOpenTeam}>Go to Team section <Icon name="arrow" size={13}/></button>
+  </div>;
+}
+
 export function Toast({ message, onDismiss }: { message: string | null; onDismiss: () => void }) {
   if (!message) return null;
   return <p className="cw-toast" role="status"><span>{message}</span><button type="button" onClick={onDismiss}>Dismiss</button></p>;

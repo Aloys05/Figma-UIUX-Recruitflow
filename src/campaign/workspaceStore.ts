@@ -148,7 +148,8 @@ export type ActivityAction =
   | "campaign.member_added" | "campaign.member_role_changed" | "campaign.member_removed" | "campaign.criteria_updated"
   | "campaign.published" | "campaign.unpublished" | "campaign.paused" | "campaign.closed" | "campaign.reopened" | "campaign.closing_date_set"
   | "application.screened" | "application.moved" | "application.overridden" | "application.rejected"
-  | "shortlist.proposed" | "shortlist.withdrawn" | "shortlist.decided" | "application.corrected" | "campaign.exported";
+  | "shortlist.proposed" | "shortlist.withdrawn" | "shortlist.decided" | "application.corrected" | "campaign.exported"
+  | "campaign.approver_invited" | "campaign.approver_invite_cancelled" | "campaign.approver_accepted";
 
 export type ActivityEvent = { id: string; actorName: string | null; action: ActivityAction; count?: number; createdAt: string };
 
@@ -520,6 +521,29 @@ export function appendCampaignActivity(campaignId: string, action: ActivityActio
   }
 }
 
+/** Shortlists on this campaign still waiting for a decision (0 if the workspace has not been opened yet). */
+export function countPendingShortlists(campaignId: string): number {
+  try {
+    const stored = readAll()[campaignId];
+    return isWorkspaceData(stored) ? stored.proposals.filter(item => item.status === "Pending approval").length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** A new approver accepted: waiting shortlists move to them. */
+export function reassignPendingShortlists(campaignId: string, approver: { id: string; name: string }) {
+  try {
+    const all = readAll();
+    const stored = all[campaignId];
+    if (!isWorkspaceData(stored)) return;
+    const next: WorkspaceData = { ...stored, proposals: stored.proposals.map(item => item.status === "Pending approval" ? { ...item, approverId: approver.id, approverName: approver.name } : item) };
+    window.localStorage.setItem(storageKey, JSON.stringify({ ...all, [campaignId]: next }));
+  } catch (error) {
+    console.error("Could not move waiting shortlists to the new approver.", error);
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Hook                                                                 */
 /* ------------------------------------------------------------------ */
@@ -818,6 +842,9 @@ const ACTIVITY_PHRASE: Record<ActivityAction, (event: ActivityEvent) => string> 
   "campaign.member_added": () => "added someone to the campaign team",
   "campaign.member_role_changed": () => "changed a team member's role",
   "campaign.member_removed": () => "removed someone from the campaign team",
+  "campaign.approver_invited": () => "invited an approver",
+  "campaign.approver_invite_cancelled": () => "cancelled the approver invitation",
+  "campaign.approver_accepted": () => "accepted the invitation to approve this campaign",
   "campaign.criteria_updated": event => typeof event.count === "number" ? `updated the requirements (${event.count} now)` : "updated the requirements",
   "campaign.published": () => "published the campaign",
   "campaign.unpublished": () => "unpublished the campaign",

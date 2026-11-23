@@ -5,11 +5,10 @@ export type CampaignTeamInput = {
   approver?: { name: string; email: string } | null;
 };
 
-/** People in the organisation who can be added to a campaign team (mock directory). */
+/** Recruiters in the organisation who can be added to a campaign team (mock directory). Approvers are invited separately. */
 export const ORGANISATION_PEOPLE: ReadonlyArray<{ id: string; name: string; email: string }> = [
   { id: "owner-dave", name: "Dave Sench", email: "dave30@gmail.com" },
   { id: "person-priya", name: "Priya Naidoo", email: "priya.naidoo@northstarlabs.com" },
-  { id: "person-johnny", name: "Johnny Test", email: "johnny.test@northstarlabs.com" },
   { id: "person-lina", name: "Lina Amadhila", email: "lina.amadhila@northstarlabs.com" },
   { id: "person-even", name: "Even Hashikutuva", email: "even.hashikutuva@northstarlabs.com" },
   { id: "person-james", name: "James Kevin", email: "james.kevin@northstarlabs.com" },

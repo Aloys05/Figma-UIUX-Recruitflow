@@ -56,7 +56,7 @@ function validateOffer(draft: OfferDraft, complete: boolean): OfferErrors {
   return errors;
 }
 
-export default function CampaignOffersTab({ campaignId, roleTitle, candidates, onMoveCandidate, onSelectCandidate, viewer, focusCandidateId, onOfferSent }: {
+export default function CampaignOffersTab({ campaignId, roleTitle, candidates, onMoveCandidate, onSelectCandidate, viewer, focusCandidateId, onOfferSent, submitBlockedReason = null }: {
   campaignId: string;
   roleTitle: string;
   candidates: WorkflowCandidate[];
@@ -65,6 +65,8 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
   viewer: CampaignViewer;
   focusCandidateId?: string | null;
   onOfferSent?: (applicationId: string, offer: CandidateOffer) => void;
+  /** Why offers cannot be submitted for approval right now, for example no approver. */
+  submitBlockedReason?: string | null;
 }) {
   const store = useReferencesOffers(campaignId, roleTitle);
   useEffect(() => {
@@ -253,7 +255,7 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
           <div className="rf-form-actions">
             <Button variant="ghost" onClick={() => setEditingFor(null)}>Cancel</Button>
             <Button variant="secondary" type="submit">Save draft</Button>
-            <Button onClick={() => saveOffer(candidate, true)}>Submit for approval</Button>
+            {submitBlockedReason ? <span className="rf-permission-guard" title={submitBlockedReason} tabIndex={0}><Button disabled>Submit for approval</Button></span> : <Button onClick={() => saveOffer(candidate, true)}>Submit for approval</Button>}
           </div>
         </form>}
 
@@ -285,7 +287,7 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
           {offer.status !== "sent" && offer.status !== "withdrawn" && <div className="rf-offer-actions">
             {offer.status === "draft" && <>
               <PermissionButton allowed={canManage} reason={offerManagePermissionMessage} icon="file" onClick={() => startEditing(candidate.id, offer)}>Edit</PermissionButton>
-              <PermissionButton allowed={canManage} reason={offerManagePermissionMessage} variant="primary" onClick={() => { setDraft(toDraft(offer)); const validation = validateOffer(toDraft(offer), true); if (Object.keys(validation).length) { startEditing(candidate.id, offer); setErrors(validation); return; } changeOffer(offer, { status: "pending", submittedAt: new Date().toISOString() }, "Offer submitted for approval."); }}>Submit for approval</PermissionButton>
+              <PermissionButton allowed={canManage && !submitBlockedReason} reason={canManage ? submitBlockedReason ?? "" : offerManagePermissionMessage} variant="primary" onClick={() => { setDraft(toDraft(offer)); const validation = validateOffer(toDraft(offer), true); if (Object.keys(validation).length) { startEditing(candidate.id, offer); setErrors(validation); return; } changeOffer(offer, { status: "pending", submittedAt: new Date().toISOString() }, "Offer submitted for approval."); }}>Submit for approval</PermissionButton>
             </>}
             {offer.status === "pending" && <PermissionButton allowed={canApprove && !drafter} reason={!canApprove ? offerApprovePermissionMessage : "You drafted this offer, so someone else must approve it."} variant="primary" icon="check" onClick={() => approve(offer)}>Approve</PermissionButton>}
             {offer.status === "approved" && <PermissionButton allowed={canManage} reason={offerManagePermissionMessage} variant="primary" icon="mail" onClick={() => { setSendId(offer.id); setSendError(""); }}>Preview &amp; send</PermissionButton>}

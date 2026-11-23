@@ -8,13 +8,15 @@ import { screenApplication, timeAgo, type CampaignWorkspaceStore, type ProposalI
 
 const proposalTone = (status: ProposalStatus) => status === "Pending approval" ? "warning" : status === "Approved" ? "success" : status === "Returned" ? "info" : status === "Partially approved" ? "purple" : "neutral";
 
-export default function ShortlistsTab({ store, requirements, actor, approvers, offerStatusFor, onOpenOverview }: {
+export default function ShortlistsTab({ store, requirements, actor, approvers, offerStatusFor, onOpenOverview, blockedReason = null }: {
   store: CampaignWorkspaceStore;
   requirements: readonly WorkspaceRequirement[];
   actor: CampaignActor;
   approvers: readonly ApproverOption[];
   offerStatusFor: (applicationId: string) => string | null;
   onOpenOverview: () => void;
+  /** Why proposing is blocked right now, for example no approver. */
+  blockedReason?: string | null;
 }) {
   const { applications, proposals } = store.data;
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -80,7 +82,7 @@ export default function ShortlistsTab({ store, requirements, actor, approvers, o
       {overlapGroup("Requirements only", "They tick your boxes but the evidence behind the role is thinner.", "info", requirementsOnly)}
       {overlapGroup("AI only", "Strong on evidence, but something you asked for is missing or unverified. These are the ones worth a second look.", "warning", aiOnly)}
     </div>}
-    <div className="campaign-propose-row"><p>Pick from either list. They become one proposed shortlist, which still goes to a line manager for a decision.</p><GuardedButton role={actor.role} action="propose" variant="primary" disabled={selectedIds.length === 0} onClick={() => setProposeOpen(true)}>{`Propose ${selectedIds.length} selected`}</GuardedButton></div>
+    <div className="campaign-propose-row"><p>Pick from either list. They become one proposed shortlist, which still goes to a line manager for a decision.</p><GuardedButton role={actor.role} action="propose" extraBlock={blockedReason} variant="primary" disabled={selectedIds.length === 0} onClick={() => setProposeOpen(true)}>{`Propose ${selectedIds.length} selected`}</GuardedButton></div>
 
     <div className="campaign-proposals-header"><h3>Proposals</h3><select aria-label="Proposal status" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">All statuses</option>{["Pending approval", "Approved", "Returned", "Partially approved", "Withdrawn"].map(status => <option key={status}>{status}</option>)}</select></div>
     {shownProposals.length ? <ul className="cw-proposals">{shownProposals.map(proposal => <li key={proposal.id} className="cw-proposal">

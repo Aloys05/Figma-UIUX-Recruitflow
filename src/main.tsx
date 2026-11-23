@@ -6,6 +6,7 @@ import './premium.css'
 import './campaign-redesign.css'
 import './campaign-references-offers.css'
 import './campaign-workspace.css'
+import './campaign-team.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
