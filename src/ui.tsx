@@ -6,7 +6,7 @@ export type IconName =
   | "bell" | "plus" | "arrow" | "dots" | "check" | "clock" | "chevron"
   | "filter" | "file" | "target" | "user" | "logOut" | "menu" | "close"
   | "building" | "card" | "lock" | "mail" | "eye" | "upload" | "location" | "minus"
-  | "calendar" | "bookmark" | "external";
+  | "calendar" | "bookmark" | "external" | "download";
 
 export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -41,6 +41,7 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></>,
     bookmark: <path d="M6 3h12v18l-6-4-6 4z"/>,
     external: <><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v7H4V6h7"/></>,
+    download: <><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 15v5h16v-5"/></>,
   };
   return <svg aria-hidden="true" className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }

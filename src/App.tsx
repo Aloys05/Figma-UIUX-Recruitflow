@@ -7,6 +7,7 @@ import { actorForRole, canPerform, useMockCampaignRole } from "./campaign/permis
 import { DEFAULT_CAMPAIGN_TEAM, campaignTeamOf } from "./campaign/team";
 import CampaignTeamSection from "./campaign/CampaignTeamSection";
 import ApproverInvitePage from "./ApproverInvitePage";
+import ApproverApp from "./approver/ApproverApp";
 import { markInviteAccepted, type ApproverInvite } from "./campaign/approverInvites";
 import { reassignPendingShortlists } from "./campaign/workspaceStore";
 import { appendCampaignActivity } from "./campaign/workspaceStore";
@@ -288,11 +289,11 @@ type CampaignListItem = {
 };
 
 const campaigns: CampaignListItem[] = [
-  { id: "1", title: "Senior Product Designer", department: "Design", status: "Active", applications: "41", published: "12 Mar 2025", color: "blue", location: "Cape Town", workArrangement: "Hybrid" },
-  { id: "2", title: "Frontend Engineer", department: "Engineering", status: "Active", applications: "86", published: "8 Mar 2025", color: "purple", location: "Cape Town", workArrangement: "Hybrid" },
-  { id: "3", title: "Customer Success Lead", department: "Operations", status: "Active", applications: "29", published: "4 Mar 2025", color: "green", location: "Cape Town", workArrangement: "Hybrid" },
-  { id: "4", title: "Growth Marketing Manager", department: "Marketing", status: "Draft", applications: "—", published: "Not published", color: "amber", location: "Cape Town", workArrangement: "Hybrid" },
-  { id: "5", title: "Finance Operations Analyst", department: "Finance", status: "Archived", applications: "54", published: "10 Jan 2025", color: "gray", location: "Cape Town", workArrangement: "Hybrid" },
+  { id: "1", title: "Senior Product Designer", department: "Design", status: "Active", applications: "41", published: "12 Mar 2025", color: "blue", location: "Windhoek", workArrangement: "Hybrid" },
+  { id: "2", title: "Frontend Engineer", department: "Engineering", status: "Active", applications: "86", published: "8 Mar 2025", color: "purple", location: "Swakopmund", workArrangement: "Remote" },
+  { id: "3", title: "Customer Success Lead", department: "Operations", status: "Active", applications: "29", published: "4 Mar 2025", color: "green", location: "Walvis Bay", workArrangement: "Hybrid" },
+  { id: "4", title: "Growth Marketing Manager", department: "Marketing", status: "Draft", applications: "—", published: "Not published", color: "amber", location: "Oshakati", workArrangement: "On-site" },
+  { id: "5", title: "Finance Operations Analyst", department: "Finance", status: "Archived", applications: "54", published: "10 Jan 2025", color: "gray", location: "Keetmanshoop", workArrangement: "Hybrid" },
 ];
 
 type CampaignRecruiter = { id: string; name: string; email: string; role: "Main recruiter" | "Additional recruiter" | "Line manager" };
@@ -333,7 +334,7 @@ const defaultDemoCampaign: DemoCampaign = {
   id: "1",
   title: "Senior Product Designer",
   department: "Design",
-  location: "Cape Town",
+  location: "Windhoek",
   workArrangement: "Hybrid",
   summary: "Help us shape clear, useful experiences for thousands of growing teams.",
   employmentType: "Full-time",
@@ -371,7 +372,7 @@ function isDemoCampaign(value: unknown): value is DemoCampaign {
     (campaign.statusChangeReason === undefined || typeof campaign.statusChangeReason === "string") &&
     (campaign.campaignTeam === undefined || Array.isArray(campaign.campaignTeam) && campaign.campaignTeam.every(member =>
       typeof member.id === "string" && typeof member.name === "string" && typeof member.email === "string" &&
-      (member.role === "Main recruiter" || member.role === "Additional recruiter")
+      (member.role === "Main recruiter" || member.role === "Additional recruiter" || member.role === "Line manager")
     )) &&
     (campaign.approver === undefined || campaign.approver === null || typeof campaign.approver.name === "string" && typeof campaign.approver.email === "string") &&
     (campaign.requirements === undefined || Array.isArray(campaign.requirements) && campaign.requirements.every(requirement =>
@@ -420,7 +421,13 @@ function loadCreatedCampaigns(): DemoCampaign[] {
   if (!Array.isArray(parsed) || !parsed.every(isDemoCampaign)) {
     throw new Error("Saved campaigns are not in the expected format.");
   }
-  return parsed;
+  return parsed.map(withNamibianDemoLocation);
+}
+
+/** Campaigns saved before the demo moved to Namibian towns still say "Cape Town": show the new demo town instead. */
+function withNamibianDemoLocation(campaign: DemoCampaign): DemoCampaign {
+  if (campaign.location !== "Cape Town") return campaign;
+  return { ...campaign, location: campaigns.find(item => item.id === campaign.id)?.location ?? "Windhoek" };
 }
 
 function readCreatedCampaigns(): DemoCampaign[] {
@@ -480,7 +487,7 @@ function readDemoCampaign(): DemoCampaign {
     if (!saved) return defaultDemoCampaign;
     const parsed: unknown = JSON.parse(saved);
     if (typeof parsed !== "object" || parsed === null) throw new Error("Saved campaign data is invalid.");
-    return { ...defaultDemoCampaign, ...(parsed as Partial<DemoCampaign>) };
+    return withNamibianDemoLocation({ ...defaultDemoCampaign, ...(parsed as Partial<DemoCampaign>) });
   } catch (error) {
     console.error("Could not load the demo campaign from browser storage.", error);
     return defaultDemoCampaign;
@@ -511,6 +518,10 @@ function CampaignsPage() {
       const savedCampaign = getCampaignDetails("1");
       return {
         ...item,
+        title: savedCampaign?.title || "Untitled campaign",
+        department: savedCampaign?.department || "Unassigned",
+        location: savedCampaign?.location || "Location not set",
+        workArrangement: savedCampaign?.workArrangement || "Arrangement not set",
         status: savedCampaign?.deleted ? "Deleted" as const : savedCampaign?.archived ? "Archived" as const : savedCampaign?.paused ? "Paused" as const : savedCampaign?.published ? "Active" as const : "Draft" as const,
         published: savedCampaign?.publishedAt ? new Date(savedCampaign.publishedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : savedCampaign?.published ? item.published : "Not published",
       };
@@ -525,7 +536,7 @@ function CampaignsPage() {
         applications: existingCampaign?.applications || "—",
         published: campaign.publishedAt ? new Date(campaign.publishedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : campaign.published ? existingCampaign?.published || "Not published" : "Not published",
         color: existingCampaign?.color || "blue",
-        location: campaign.location || existingCampaign?.location || "Location not set",
+        location: campaign.location || "Location not set",
         workArrangement: campaign.workArrangement || existingCampaign?.workArrangement || "Arrangement not set",
       };
     }),
@@ -1030,12 +1041,13 @@ function CampaignEditor({ campaignId }: { campaignId: string }) {
     <nav className="campaign-edit-nav" aria-label="Campaign settings sections">{editSections.map(([id, label], index) => <a key={id} href={`#${id}`} onClick={event => { event.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}><span>{index + 1}</span>{label}</a>)}</nav>
 
     <section className="surface campaign-edit-section" id="campaign-edit-details">
-      <header className="campaign-edit-section-heading"><h2>Job board details</h2><p>The campaign name is the job title candidates see. Service category and work arrangement power candidate filters on the job board. Both are required before publishing.</p></header>
+      <header className="campaign-edit-section-heading"><h2>Job board details</h2><p>The campaign name is the job title candidates see. Service category, work arrangement and location power candidate filters on the job board. Both are required before publishing.</p></header>
       <label className="campaign-edit-field campaign-edit-field-full"><span>Campaign name</span><input value={campaign.title} disabled={!canEdit} maxLength={120} placeholder="e.g. Geology Intern" onChange={event => updateCampaign({ title: event.target.value })}/></label>
-      <div className="campaign-edit-grid">
+      <div className="campaign-edit-grid campaign-edit-grid-3">
         <label className="campaign-edit-field"><span>Service category</span><input list="campaign-service-categories" value={campaign.department} disabled={!canEdit} placeholder="e.g. Software developer" onChange={event => updateCampaign({ department: event.target.value })}/></label>
         <datalist id="campaign-service-categories">{["Accountant", "Customer success", "Design", "Engineering", "Finance", "Marketing", "Operations", "Software developer", "Other"].map(category => <option key={category} value={category}/>)}</datalist>
         <label className="campaign-edit-field"><span>Work arrangement</span><select value={campaign.workArrangement} disabled={!canEdit} onChange={event => updateCampaign({ workArrangement: event.target.value })}><option value="">Select arrangement</option>{["Remote", "Hybrid", "On-site"].map(arrangement => <option key={arrangement}>{arrangement}</option>)}</select></label>
+        <label className="campaign-edit-field"><span>Location</span><input value={campaign.location} disabled={!canEdit} maxLength={80} placeholder="City or town, e.g. Windhoek" onChange={event => updateCampaign({ location: event.target.value })}/></label>
       </div>
       <RichTextEditor key={campaign.id} value={campaign.roleDescription} onChange={roleDescription => updateCampaign({ roleDescription, summary: "" })}/>
     </section>
@@ -1744,25 +1756,6 @@ function AuthPage({ kind = "login", approverLogin = false }: { kind?: "login" | 
   </div></main></div>;
 }
 
-function ApproverPage() {
-  const view = getRouteRoleView("owner");
-  return <div className="approver-standalone">
-    <header className="approver-header"><button className="logo" onClick={() => go("/approver")}><span className="brand-symbol"><img src={asset("assets/recruitflow-logo.png")} alt=""/></span><span>RecruitFlow</span></button><span className="approver-header-label"><Icon name="sparkles" size={16}/>Approver workspace</span><Button variant="ghost" onClick={() => go("/login")}>Sign out</Button></header>
-    <main className="approver-content"><div className="narrow-page"><PageHeader eyebrow="Approver workspace" title="Approvals" description="Review candidates whose decisions are ready for final sign-off before moving them forward." action={<Button variant="secondary">Export summary</Button>}/>
-    <div className="metrics-grid">{[
-      ["Pending reviews", "12", "blue"],
-      ["Shortlists proposed", "6", "amber"],
-      ["Offers awaiting sign-off", "3", "green"],
-    ].map(([label, value, tone]) => <div className="metric" key={label}><div className={`metric-icon metric-${tone}`}><Icon name={tone === "blue" ? "file" : tone === "amber" ? "clock" : "check" as IconName}/></div><div><span>{label}</span><strong>{value}</strong><small>{view === "owner" ? "Shared with your team" : "Review queue"}</small></div></div>)}</div>
-    <section className="surface list-surface"><div className="table-wrap"><table><thead><tr><th>Candidate</th><th>Role</th><th>Decision</th><th>Stage</th><th>Actions</th></tr></thead><tbody>{[
-      { name: "Amina Toure", role: "Senior Product Designer", action: "Approve shortlist", stage: "Shortlist proposed" },
-      { name: "Noah Kim", role: "Frontend Engineer", action: "Send back with a reason", stage: "Reference check" },
-      { name: "Priya Shah", role: "Customer Success Lead", action: "Approve offer", stage: "Offer" },
-    ].map(item => <tr key={item.name}><td><span className="person"><Avatar initials={item.name.split(" ").map(part => part[0]).join("").slice(0, 2)} color="purple"/><span><strong>{item.name}</strong><small>{item.role}</small></span></span></td><td>{item.role}</td><td><Badge tone="warning">Awaiting approval</Badge></td><td>{item.stage}</td><td><Button variant="secondary" onClick={() => go("/approver?view=recruiter")}>{item.action}</Button></td></tr>)}</tbody></table></div></section>
-    </div></main>
-  </div>;
-}
-
 function StyleGuidePage() {
   const swatches = [
     ["Primary", "#0060f0", "Buttons, links, active states"],
@@ -1919,7 +1912,7 @@ function App() {
     if (path.includes("workspace-unavailable")) return <AuthPage kind="unavailable"/>;
     if (path === "/style-guide") return <StyleGuidePage/>;
     if (/^\/reference\/[^/]+$/.test(path)) return <RefereeFormPage token={decodeURIComponent(path.split("/").pop() || "")}/>;
-    if (path.startsWith("/approver")) return <ApproverPage/>;
+    if (path === "/approver" || path.startsWith("/approver/")) return <ApproverApp path={path}/>;
     if (path.startsWith("/candidate")) {
       let page: React.ReactNode = <CandidateDashboard/>;
       if (path.includes("/jobs")) page = <JobsPage/>;

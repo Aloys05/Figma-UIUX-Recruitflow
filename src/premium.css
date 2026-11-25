@@ -930,6 +930,7 @@ td { padding: .9rem 1.05rem; border-color: #f0f1f7; font-size: .73rem; }
 .campaign-edit-field input:focus,.campaign-edit-field select:focus,.campaign-edit-field textarea:focus { border-color: #9eb4d5; outline: 3px solid rgba(45,82,141,.09); }
 .campaign-edit-field-full { margin-bottom: .85rem; }
 .campaign-edit-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .8rem; margin-bottom: .85rem; }
+.campaign-edit-grid-3 { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .campaign-edit-section .rich-text-field { margin-top: .85rem; }
 .campaign-edit-section .rich-text-editor { min-height: 10rem; }
 .role-description-display { margin: .55rem 0 0; color: #536782; font-size: .75rem; line-height: 1.65; overflow-wrap: anywhere; }

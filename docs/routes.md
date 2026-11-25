@@ -27,3 +27,15 @@
 - `/approver-invite/demo?preview=new|existing|signed-in|other|invalid|expired|used` — open one version of the invitation page (also the "Preview" menu)
 - Campaign workspace `?tab=overview|shortlists|offers` — shows the no-approver warning when the campaign has no approver; Propose shortlist and Submit for approval are disabled with the same reason
 - Demo rule: an approver email ending in `.invalid` simulates "email could not be sent"
+
+## Phase 4 (D4) — Approver app
+- `/approver` — Approvals page in its own frame (logo, "Approvals", the approver's name, Sign out; no recruiter navigation). Tabs Waiting for you and Decided, plus Roles you approve for
+- `/approver?tab=decided` — open the Decided tab
+- `/approver?state=empty` — both tabs empty ("Nothing is waiting for you."); also the "Preview" menu
+- `/approver/shortlists/:id` — shortlist decision, candidate by candidate: requirement results, application answers, Download CV, Approve or Send back with a required reason, progress and a finished state. Demo ids: `sl-spd` (5 candidates), `sl-fe` (1 of 3 already decided), `sl-da` (finished)
+- `/approver/shortlists/sl-spd?preview=undecided|mixed|finished` — open one designed state (also the "Preview" menu). Preview decisions are not saved
+- `/approver` overview — four summary cards above the tabs: Waiting for you, Shortlists to review, Offers awaiting sign-off, Approval rate
+- `/approver/offers/:id` — offer decision: candidate, offer details in the same plain layout as the recruiter's offer card (salary, start date, probation, notice period, reports to, work arrangement, conditions), and a decision panel (Approve with a confirm step, or Send back with a required reason). Demo ids: `of-csl` (waiting), `of-da` (approved)
+- `/approver/offers/of-csl?preview=undecided|approved|sent-back` — open one designed state (also the "Preview" menu). Preview decisions are not saved
+- Demo rule: decisions made in Live mode are kept in browser storage, so a finished shortlist or offer moves to Decided. "Reset demo" on the Approvals page clears them
+- The signed-in approver's name comes from the approver invitation sign-in (D3); otherwise the demo approver Maria Shilongo is shown

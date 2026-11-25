@@ -243,7 +243,7 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
         {editing && <form className="rf-form" onSubmit={event => { event.preventDefault(); saveOffer(candidate, false); }} noValidate>
           <h4>{offer?.status === "draft" ? "Edit offer draft" : "Draft an offer"}</h4>
           <div className="rf-form-grid">
-            <OfferField label="Monthly salary (N$)" required error={errors.monthlySalary}><input type="number" min="1" step="any" inputMode="decimal" value={draft.monthlySalary} onChange={event => updateDraft({ monthlySalary: event.target.value })} aria-invalid={Boolean(errors.monthlySalary)}/></OfferField>
+            <OfferField label="Monthly salary (NAD)" required error={errors.monthlySalary}><input type="number" min="1" step="any" inputMode="decimal" value={draft.monthlySalary} onChange={event => updateDraft({ monthlySalary: event.target.value })} aria-invalid={Boolean(errors.monthlySalary)}/></OfferField>
             <OfferField label="Start date" required error={errors.startDate}><input type="date" value={draft.startDate} onChange={event => updateDraft({ startDate: event.target.value })} aria-invalid={Boolean(errors.startDate)}/></OfferField>
             <OfferField label="Probation" required error={errors.probation}><input value={draft.probation} placeholder="e.g. 3 months" maxLength={80} onChange={event => updateDraft({ probation: event.target.value })} aria-invalid={Boolean(errors.probation)}/></OfferField>
             <OfferField label="Notice period" required error={errors.noticePeriod}><input value={draft.noticePeriod} placeholder="e.g. 1 month" maxLength={80} onChange={event => updateDraft({ noticePeriod: event.target.value })} aria-invalid={Boolean(errors.noticePeriod)}/></OfferField>

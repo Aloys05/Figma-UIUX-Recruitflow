@@ -283,7 +283,7 @@ export function screenApplication(application: WorkspaceApplication, requirement
 export const employerName = "Northstar Labs";
 
 const firstName = (fullName: string) => fullName.trim().split(/\s+/)[0] || "there";
-const money = (amount: number) => `N$ ${amount.toLocaleString("en-GB", { maximumFractionDigits: 2 })}`;
+const money = (amount: number) => `NAD ${amount.toLocaleString("en-GB", { maximumFractionDigits: 2 })}`;
 const longDate = (isoDate: string) => {
   const date = new Date(`${isoDate}T00:00:00Z`);
   return Number.isNaN(date.getTime()) ? isoDate : date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });

@@ -165,7 +165,7 @@ export function formatDateTime(value?: string) {
 }
 
 export function formatSalary(value: number) {
-  return `N$ ${value.toLocaleString("en-GB", { maximumFractionDigits: 2 })}`;
+  return `NAD ${value.toLocaleString("en-GB", { maximumFractionDigits: 2 })}`;
 }
 
 export function createId(prefix: string) {
