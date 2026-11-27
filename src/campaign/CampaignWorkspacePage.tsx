@@ -106,10 +106,8 @@ export default function CampaignWorkspacePage({ campaign: initialCampaign, descr
   const applyLink = state === "draft" ? "" : publicUrl(campaign);
   const counts = (stage: string) => store.data.applications.filter(item => item.stage === stage).length;
   const shortlistCount = counts("shortlist-proposed") + counts("shortlist-approved");
-  const approvers: ApproverOption[] = [
-    ...team.filter(member => member.role === "Line manager").map(member => ({ id: member.id, name: member.name, role: "Line manager" })),
-    { id: "admin-sophie", name: "Sophie Okafor", role: "Administrator" },
-  ];
+  // The campaign's own approver. Shortlists go to them; there is no picker.
+  const approvers: ApproverOption[] = team.filter(member => member.role === "Line manager").slice(0, 1).map(member => ({ id: member.id, name: member.name, role: "Line manager" }));
   const offers = useMemo(() => loadReferencesOffers(campaign.id, roleTitle).data.offers, [campaign.id, roleTitle, activeTab, store.data]);
   // Live counts shown on each tab.
   const activeOffers = new Set(offers.filter(offer => offer.status !== "withdrawn").map(offer => offer.candidateId)).size;

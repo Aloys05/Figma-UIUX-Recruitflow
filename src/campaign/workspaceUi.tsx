@@ -179,17 +179,18 @@ export function ProposeDialog({ applications, requirements, approvers, onCancel,
   onConfirm: (input: { name: string; approverId: string; approverName: string; note: string }) => void;
 }) {
   const [name, setName] = useState("");
-  const [approverId, setApproverId] = useState("");
   const [note, setNote] = useState("");
-  const approver = approvers.find(item => item.id === approverId);
+  // No picker: a shortlist always goes to the campaign's approver.
+  const approver = approvers[0];
   const valid = name.trim().length > 0 && Boolean(approver) && applications.length > 0;
   return <WorkflowDialog title="Propose a shortlist" wide onClose={onCancel} footer={<>
     <Button variant="secondary" onClick={onCancel}>Cancel</Button>
-    <Button disabled={!valid} onClick={() => valid && approver && onConfirm({ name: name.trim(), approverId: approver.id, approverName: approver.name, note })}>Submit for approval</Button>
+    <Button disabled={!valid} onClick={() => valid && approver && onConfirm({ name: name.trim(), approverId: approver.id, approverName: approver.name, note })}>Propose shortlist</Button>
   </>}>
-    <p className="rf-dialog-note">This creates a proposal for the line manager. It is not an approval.</p>
-    <label className="rf-field"><span>Proposal name</span><input value={name} onChange={event => setName(event.target.value)} placeholder="e.g. Senior React Engineer shortlist"/></label>
-    <label className="rf-field"><span>Approver</span><select value={approverId} onChange={event => setApproverId(event.target.value)}><option value="">Choose an approver</option>{approvers.map(item => <option key={item.id} value={item.id}>{item.name}, {item.role}</option>)}</select></label>
+    <label className="rf-field"><span>Shortlist name</span><input value={name} maxLength={120} onChange={event => setName(event.target.value)} placeholder="e.g. Senior React Engineer shortlist"/></label>
+    {approver
+      ? <div className="cw-goes-to"><Avatar name={approver.name}/><span><small>Goes to the campaign's approver</small><strong>{approver.name}</strong></span></div>
+      : <p className="rf-banner warning"><Icon name="lock" size={16}/>This campaign has no approver yet, so the shortlist cannot be proposed.</p>}
     <label className="rf-field"><span>Note</span><textarea rows={3} value={note} onChange={event => setNote(event.target.value)} placeholder="Anything the approver should know before deciding."/></label>
     <div><p className="cw-section-label">{applications.length} candidate{applications.length === 1 ? "" : "s"}</p>
       <ul className="cw-list">{applications.map(application => {

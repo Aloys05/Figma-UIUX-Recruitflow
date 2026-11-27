@@ -22,7 +22,7 @@ import {
   type OfferDetails,
   type WorkArrangement,
 } from "./campaignReferencesOffersData";
-import { EmailPreviewDialog, PermissionButton, WorkflowDialog } from "./campaignWorkflowUi";
+import { CandidatePicker, EmailPreviewDialog, PermissionButton, WorkflowDialog, type PickerItem } from "./campaignWorkflowUi";
 import { Badge, Button, Icon } from "./ui";
 
 type OfferDraft = Omit<OfferDetails, "monthlySalary"> & { monthlySalary: string };
@@ -69,10 +69,11 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
   submitBlockedReason?: string | null;
 }) {
   const store = useReferencesOffers(campaignId, roleTitle);
+  const [selectedId, setSelectedId] = useState<string | null>(focusCandidateId ?? null);
   useEffect(() => {
     if (!focusCandidateId) return;
+    setSelectedId(focusCandidateId);
     const element = document.getElementById(`rf-group-${focusCandidateId}`);
-    element?.scrollIntoView({ behavior: "smooth", block: "start" });
     element?.classList.add("rf-focus");
     const timer = window.setTimeout(() => element?.classList.remove("rf-focus"), 2400);
     return () => window.clearTimeout(timer);
@@ -88,6 +89,9 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
   const [sendId, setSendId] = useState<string | null>(null);
   const [sendError, setSendError] = useState("");
   const [notice, setNotice] = useState<{ candidateId: string; text: string } | null>(null);
+  const [sendBackId, setSendBackId] = useState<string | null>(null);
+  const [sendBackReason, setSendBackReason] = useState("");
+  const [sendBackError, setSendBackError] = useState("");
 
   const offersFor = (candidateId: string) => store.data.offers
     .filter(offer => offer.candidateId === candidateId)
@@ -99,7 +103,19 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
   const rows = candidates
     .filter(candidate => candidate.stage === "shortlist-approved" || candidate.stage === "reference-check" || candidate.stage === "offer" || store.data.offers.some(offer => offer.candidateId === candidate.id))
     .sort((left, right) => (right.stage === "offer" ? 1 : 0) - (left.stage === "offer" ? 1 : 0));
+  const selectedCandidate = rows.find(candidate => candidate.id === selectedId) ?? rows[0];
+  const pickerItems: PickerItem[] = rows.map(candidate => {
+    const offer = currentOffer(candidate.id);
+    return {
+      id: candidate.id,
+      name: candidate.name,
+      meta: stageTitle(candidate.stage),
+      status: offer ? { label: offerStatusLabels[offer.status], tone: offerStatusTones[offer.status] } : { label: "No offer", tone: "neutral" },
+    };
+  });
+  const choose = (candidateId: string) => { setSelectedId(candidateId); setEditingFor(null); setNotice(null); };
   const findOffer = (offerId: string | null) => store.data.offers.find(offer => offer.id === offerId);
+  const sendBackOffer = findOffer(sendBackId);
   const withdrawOffer = findOffer(withdrawId);
   const sendOffer = findOffer(sendId);
   const sendCandidate = sendOffer ? candidates.find(candidate => candidate.id === sendOffer.candidateId) : undefined;
@@ -126,8 +142,9 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
     setErrors(validation);
     if (Object.keys(validation).length) return;
     const existing = currentOffer(candidate.id);
-    const editingDraft = existing?.status === "draft" ? existing : undefined;
-    if (existing && existing.status !== "draft" && existing.status !== "withdrawn") {
+    // A sent-back offer is changed in place, like a draft.
+    const editingDraft = existing?.status === "draft" || existing?.status === "sent-back" ? existing : undefined;
+    if (existing && existing.status !== "draft" && existing.status !== "sent-back" && existing.status !== "withdrawn") {
       setNotice({ candidateId: candidate.id, text: "This offer has been submitted. Withdraw it to make changes." });
       return;
     }
@@ -146,9 +163,11 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
       ...(editingDraft ?? { id: createId("offer"), campaignId, candidateId: candidate.id, draftedBy: viewer.name, draftedAt: now }),
       ...details,
       previousStage,
-      status: submit ? "pending" : "draft",
+      // Saving a sent-back offer keeps the approver's reason on show until it is submitted again.
+      status: submit ? "pending" : editingDraft?.status === "sent-back" ? "sent-back" : "draft",
       updatedAt: now,
-      submittedAt: submit ? now : undefined,
+      submittedAt: submit ? now : editingDraft?.submittedAt,
+      sentBackReason: submit ? undefined : editingDraft?.sentBackReason,
     } as CandidateOffer;
     const saved = store.update(data => ({ ...data, offers: editingDraft ? data.offers.map(item => item.id === editingDraft.id ? offer : item) : [...data.offers, offer] }));
     if (!saved) {
@@ -157,7 +176,7 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
     }
     if (candidate.stage !== "offer") onMoveCandidate(candidate.id, "offer");
     setEditingFor(null);
-    setNotice({ candidateId: candidate.id, text: submit ? "Offer submitted for approval." : `Draft saved.${candidate.stage !== "offer" ? ` ${candidate.name} moved to Offer.` : ""}` });
+    setNotice({ candidateId: candidate.id, text: submit ? (editingDraft?.status === "sent-back" ? "Offer submitted again. It is waiting for approval." : "Offer submitted for approval.") : `Draft saved.${candidate.stage !== "offer" ? ` ${candidate.name} moved to Offer.` : ""}` });
   };
 
   const changeOffer = (offer: CandidateOffer, changes: Partial<CandidateOffer>, message: string) => {
@@ -169,6 +188,17 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
   const approve = (offer: CandidateOffer) => {
     if (!canApprove || offer.status !== "pending" || offer.draftedBy === viewer.name) return;
     changeOffer(offer, { status: "approved", approvedBy: viewer.name, approvedAt: new Date().toISOString() }, "Offer approved. The main recruiter can now preview and send it.");
+  };
+
+  const confirmSendBack = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!sendBackOffer || !canApprove || sendBackOffer.status !== "pending") return;
+    if (!sendBackReason.trim()) {
+      setSendBackError("Give a reason so the recruiter knows what to change.");
+      return;
+    }
+    const now = new Date().toISOString();
+    if (changeOffer(sendBackOffer, { status: "sent-back", sentBackBy: viewer.name, sentBackAt: now, sentBackReason: sendBackReason.trim() }, "Offer sent back to the main recruiter with your reason.")) setSendBackId(null);
   };
 
   const confirmWithdraw = (event: React.FormEvent<HTMLFormElement>) => {
@@ -208,7 +238,7 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
     <div className="rf-toolbar">
       <p className="rf-toolbar-note">Acting as <strong>{viewer.name}</strong>. Change who you are previewing with “Preview as” at the top of the campaign.</p>
       <div className="rf-summary" aria-label="Offer summary">
-        {(["draft", "pending", "approved", "sent"] as const).map(status => <span key={status}><strong>{rows.filter(candidate => currentOffer(candidate.id)?.status === status).length}</strong> {offerStatusLabels[status].toLowerCase()}</span>)}
+        {(["draft", "pending", "sent-back", "approved", "sent"] as const).map(status => <span key={status}><strong>{rows.filter(candidate => currentOffer(candidate.id)?.status === status).length}</strong> {offerStatusLabels[status].toLowerCase()}</span>)}
       </div>
     </div>
     {store.error && <p className="demo-storage-error" role="alert">{store.error}</p>}
@@ -217,7 +247,9 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
       <span><Icon name="file" size={22}/></span>
       <h3>No candidates ready for an offer</h3>
       <p>Candidates at Shortlist approved, Reference check or Offer appear here. Saving an offer draft moves the candidate to the Offer stage.</p>
-    </section> : <div className="rf-groups">{rows.map(candidate => {
+    </section> : <div className="rf-picker-layout">
+      <CandidatePicker label="Candidates for an offer" items={pickerItems} selectedId={selectedCandidate?.id ?? null} onSelect={choose}/>
+      <div className="rf-groups">{(selectedCandidate ? [selectedCandidate] : []).map(candidate => {
       const offer = currentOffer(candidate.id);
       const referees = store.data.referees.filter(referee => referee.candidateId === candidate.id);
       const unanswered = referees.filter(referee => referee.status === "not-sent" || referee.status === "sent").length;
@@ -241,7 +273,8 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
         {notice?.candidateId === candidate.id && <p className="rf-notice success" role="status">{notice.text}</p>}
 
         {editing && <form className="rf-form" onSubmit={event => { event.preventDefault(); saveOffer(candidate, false); }} noValidate>
-          <h4>{offer?.status === "draft" ? "Edit offer draft" : "Draft an offer"}</h4>
+          <h4>{offer?.status === "draft" ? "Edit offer draft" : offer?.status === "sent-back" ? "Change the offer" : "Draft an offer"}</h4>
+          {offer?.status === "sent-back" && offer.sentBackReason && <SentBackReason offer={offer}/>}
           <div className="rf-form-grid">
             <OfferField label="Monthly salary (NAD)" required error={errors.monthlySalary}><input type="number" min="1" step="any" inputMode="decimal" value={draft.monthlySalary} onChange={event => updateDraft({ monthlySalary: event.target.value })} aria-invalid={Boolean(errors.monthlySalary)}/></OfferField>
             <OfferField label="Start date" required error={errors.startDate}><input type="date" value={draft.startDate} onChange={event => updateDraft({ startDate: event.target.value })} aria-invalid={Boolean(errors.startDate)}/></OfferField>
@@ -255,7 +288,7 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
           <div className="rf-form-actions">
             <Button variant="ghost" onClick={() => setEditingFor(null)}>Cancel</Button>
             <Button variant="secondary" type="submit">Save draft</Button>
-            {submitBlockedReason ? <span className="rf-permission-guard" title={submitBlockedReason} tabIndex={0}><Button disabled>Submit for approval</Button></span> : <Button onClick={() => saveOffer(candidate, true)}>Submit for approval</Button>}
+            {submitBlockedReason ? <span className="rf-permission-guard" title={submitBlockedReason} tabIndex={0}><Button disabled>{offer?.status === "sent-back" ? "Submit again" : "Submit for approval"}</Button></span> : <Button onClick={() => saveOffer(candidate, true)}>{offer?.status === "sent-back" ? "Submit again" : "Submit for approval"}</Button>}
           </div>
         </form>}
 
@@ -271,6 +304,7 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
             {offer.conditions && <div className="wide"><dt>Conditions</dt><dd>{offer.conditions}</dd></div>}
           </dl>
           {salaryHigh && offer.status !== "sent" && offer.status !== "withdrawn" && <p className="rf-banner warning"><Icon name="target" size={16}/>Check the salary: it is unusually high.</p>}
+          {offer.status === "sent-back" && offer.sentBackReason && <SentBackReason offer={offer}/>}
           {offer.status === "pending" && drafter && <p className="rf-banner info"><Icon name="users" size={16}/>You drafted this offer, so someone else must approve it.</p>}
           {(offer.status === "pending" || offer.status === "approved") && canManage && <p className="rf-banner"><Icon name="lock" size={16}/>This offer has been submitted. Withdraw it to make changes.</p>}
           {offer.status === "sent" && <p className="rf-banner success"><Icon name="check" size={16}/>This offer has been sent and can no longer be changed.</p>}
@@ -279,6 +313,7 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
           <ul className="rf-audit">
             <li><span>Drafted by</span>{offer.draftedBy} · {formatDateTime(offer.draftedAt)}</li>
             {offer.submittedAt && <li><span>Submitted</span>{formatDateTime(offer.submittedAt)}</li>}
+            {offer.sentBackAt && <li><span>Sent back by</span>{offer.sentBackBy} · {formatDateTime(offer.sentBackAt)}</li>}
             {offer.approvedAt && <li><span>Approved by</span>{offer.approvedBy} · {formatDateTime(offer.approvedAt)}</li>}
             {offer.sentAt && <li><span>Sent</span>{formatDateTime(offer.sentAt)}</li>}
             {offer.withdrawnAt && <li><span>Withdrawn</span>{formatDateTime(offer.withdrawnAt)} · {offer.withdrawReason}</li>}
@@ -289,6 +324,11 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
               <PermissionButton allowed={canManage} reason={offerManagePermissionMessage} icon="file" onClick={() => startEditing(candidate.id, offer)}>Edit</PermissionButton>
               <PermissionButton allowed={canManage && !submitBlockedReason} reason={canManage ? submitBlockedReason ?? "" : offerManagePermissionMessage} variant="primary" onClick={() => { setDraft(toDraft(offer)); const validation = validateOffer(toDraft(offer), true); if (Object.keys(validation).length) { startEditing(candidate.id, offer); setErrors(validation); return; } changeOffer(offer, { status: "pending", submittedAt: new Date().toISOString() }, "Offer submitted for approval."); }}>Submit for approval</PermissionButton>
             </>}
+            {offer.status === "sent-back" && <>
+              <PermissionButton allowed={canManage} reason={offerManagePermissionMessage} icon="file" onClick={() => startEditing(candidate.id, offer)}>Change offer</PermissionButton>
+              <PermissionButton allowed={canManage && !submitBlockedReason} reason={canManage ? submitBlockedReason ?? "" : offerManagePermissionMessage} variant="primary" onClick={() => { const validation = validateOffer(toDraft(offer), true); if (Object.keys(validation).length) { startEditing(candidate.id, offer); setErrors(validation); return; } changeOffer(offer, { status: "pending", submittedAt: new Date().toISOString(), sentBackReason: undefined }, "Offer submitted again. It is waiting for approval."); }}>Submit again</PermissionButton>
+            </>}
+            {offer.status === "pending" && <PermissionButton allowed={canApprove && !drafter} reason={!canApprove ? offerApprovePermissionMessage : "You drafted this offer, so someone else must approve it."} icon="close" onClick={() => { setSendBackId(offer.id); setSendBackReason(""); setSendBackError(""); }}>Send back</PermissionButton>}
             {offer.status === "pending" && <PermissionButton allowed={canApprove && !drafter} reason={!canApprove ? offerApprovePermissionMessage : "You drafted this offer, so someone else must approve it."} variant="primary" icon="check" onClick={() => approve(offer)}>Approve</PermissionButton>}
             {offer.status === "approved" && <PermissionButton allowed={canManage} reason={offerManagePermissionMessage} variant="primary" icon="mail" onClick={() => { setSendId(offer.id); setSendError(""); }}>Preview &amp; send</PermissionButton>}
             <PermissionButton allowed={canManage} reason={offerManagePermissionMessage} variant="danger" onClick={() => { setWithdrawId(offer.id); setWithdrawReason(""); setWithdrawError(""); }}>Withdraw</PermissionButton>
@@ -297,7 +337,16 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
 
         {!offer && !editing && <div className="rf-group-empty">No offer yet. {canManage ? "Draft one when references are complete." : "The main recruiter drafts offers."}</div>}
       </article>;
-    })}</div>}
+    })}</div>
+    </div>}
+
+    {sendBackOffer && <WorkflowDialog eyebrow="Send back offer" title={`Send the offer for ${candidates.find(item => item.id === sendBackOffer.candidateId)?.name ?? "this candidate"} back?`} onClose={() => setSendBackId(null)}>
+      <form className="rf-withdraw-form" onSubmit={confirmSendBack} noValidate>
+        <p className="rf-dialog-note">The main recruiter sees your reason until they change the offer and submit it again. The candidate sees nothing.</p>
+        <label className={`rf-field${sendBackError ? " has-error" : ""}`}><span>Reason<b aria-hidden="true">*</b></span><textarea rows={4} value={sendBackReason} maxLength={MAX_CONDITIONS_LENGTH} aria-required="true" aria-invalid={Boolean(sendBackError)} onChange={event => { setSendBackReason(event.target.value); setSendBackError(""); }} placeholder="e.g. Please bring the salary down to NAD 45,000, or explain why we should go above the band."/>{sendBackError && <small role="alert">{sendBackError}</small>}</label>
+        <div className="rf-form-actions"><Button variant="secondary" onClick={() => setSendBackId(null)}>Cancel</Button><Button variant="danger" type="submit">Send back</Button></div>
+      </form>
+    </WorkflowDialog>}
 
     {withdrawOffer && <WorkflowDialog eyebrow="Withdraw offer" title={`Withdraw the offer for ${candidates.find(item => item.id === withdrawOffer.candidateId)?.name ?? "this candidate"}?`} onClose={() => setWithdrawId(null)}>
       <form className="rf-withdraw-form" onSubmit={confirmWithdraw} noValidate>
@@ -316,6 +365,18 @@ export default function CampaignOffersTab({ campaignId, roleTitle, candidates, o
       onClose={() => setSendId(null)}
     />}
   </section>;
+}
+
+/** The approver's reason, shown until the offer is submitted again. */
+function SentBackReason({ offer }: { offer: CandidateOffer }) {
+  return <div className="rf-sent-back" role="note">
+    <span className="rf-sent-back-icon"><Icon name="close" size={14}/></span>
+    <div>
+      <strong>Sent back by {offer.sentBackBy ?? "the approver"}{offer.sentBackAt ? ` on ${formatDate(offer.sentBackAt)}` : ""}</strong>
+      <p>{offer.sentBackReason}</p>
+      <small>Change the offer and submit it again. This reason stays here until you do.</small>
+    </div>
+  </div>;
 }
 
 function OfferField({ label, required = false, error, hint, wide = false, children }: { label: string; required?: boolean; error?: string; hint?: string; wide?: boolean; children: React.ReactNode }) {

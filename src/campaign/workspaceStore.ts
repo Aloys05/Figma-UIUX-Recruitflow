@@ -413,12 +413,27 @@ function seedWorkspace(campaignId: string, roleTitle: string, team: readonly Cam
   const approved = applications.filter(item => ["shortlist-approved", "reference-check", "offer"].includes(item.stage)).map(item => item.id);
   const proposed = applications.filter(item => item.stage === "shortlist-proposed").map(item => item.id);
   const proposals: ShortlistProposal[] = [];
+  // An earlier shortlist the approver partly sent back, so the demo shows each reason.
+  const longlisted = applications.filter(item => item.stage === "longlist").map(item => item.id);
+  if (approved.length && longlisted.length >= 2) {
+    const earlierIds = [approved[0], longlisted[0], longlisted[1]];
+    proposals.push({
+      id: "proposal-v0", name: `${roleTitle} first shortlist`, version: 1, status: "Partially approved", approverId, approverName, submittedBy: main, submittedById: mainId, submittedAt: ago(6), note: "First pass after the screening call.",
+      applicationIds: earlierIds,
+      decisions: {
+        [earlierIds[0]]: { decision: "Approved", comment: "" },
+        [earlierIds[1]]: { decision: "Returned", comment: "No evidence of the must-have experience at this level. Happy to look again if the portfolio shows it." },
+        [earlierIds[2]]: { decision: "Returned", comment: "Salary expectation is well above the band for this role." },
+      },
+      decidedBy: approverName, decidedAt: ago(5, 2),
+    });
+  }
   if (approved.length) proposals.push({
     id: "proposal-v1", name: `${roleTitle} shortlist`, version: 1, status: "Approved", approverId, approverName, submittedBy: main, submittedById: mainId, submittedAt: ago(3), note: "Our three strongest candidates after screening.",
     applicationIds: approved, decisions: Object.fromEntries(approved.map(id => [id, { decision: "Approved", comment: "" }])), decidedBy: approverName, decidedAt: ago(2, 5),
   });
   if (proposed.length) proposals.push({
-    id: "proposal-v2", name: `${roleTitle} shortlist`, version: proposals.length + 1, status: "Pending approval", approverId, approverName, submittedBy: main, submittedById: mainId, submittedAt: ago(0, 3), note: "A late, very strong applicant. Please review before Friday.",
+    id: "proposal-v2", name: `${roleTitle} shortlist`, version: proposals.filter(item => item.name === `${roleTitle} shortlist`).length + 1, status: "Pending approval", approverId, approverName, submittedBy: main, submittedById: mainId, submittedAt: ago(0, 3), note: "A late, very strong applicant. Please review before Friday.",
     applicationIds: proposed, decisions: {},
   });
   applications.forEach(item => {
@@ -459,7 +474,8 @@ function seedWorkspace(campaignId: string, roleTitle: string, team: readonly Cam
 /* Storage                                                              */
 /* ------------------------------------------------------------------ */
 
-const storageKey = "recruitflow.campaignWorkspace";
+// v2: re-seeds once so the D5 demo states (partly sent back shortlist) appear.
+const storageKey = "recruitflow.campaignWorkspace.v2";
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
 function isWorkspaceData(value: unknown): value is WorkspaceData {
@@ -742,6 +758,28 @@ export function useCampaignWorkspaceStore(campaignId: string, roleTitle: string,
     return null;
   };
 
+  /** Starting wording for a candidate: their latest email of this type if there is one, otherwise the template written for them. */
+  const messageStartFor = (applicationId: string, template: MessageTemplate): { subject: string; body: string; fromExisting: boolean } | null => {
+    const application = dataRef.current.applications.find(item => item.id === applicationId);
+    if (!application) return null;
+    const existing = dataRef.current.messages
+      .filter(item => item.applicationId === applicationId && item.template === template)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+    if (existing) return { subject: existing.subject, body: existing.body, fromExisting: true };
+    return { ...renderCandidateMessage(template, application.name, roleTitle), fromExisting: false };
+  };
+
+  /** Puts a customised email in the outbox as queued. Returns its id, or an error. */
+  const prepareMessage = (applicationId: string, template: MessageTemplate, subject: string, body: string): { id: string } | { error: string } => {
+    if (!subject.trim()) return { error: "Give the email a subject." };
+    if (!body.trim()) return { error: "The email needs a message." };
+    const application = dataRef.current.applications.find(item => item.id === applicationId);
+    if (!application) return { error: "This candidate is no longer on the campaign." };
+    const message: CandidateMessage = { id: newId("msg"), applicationId, candidateName: application.name, candidateEmail: application.email, template, subject: subject.trim(), body, status: "queued", error: null, createdAt: new Date().toISOString(), sentAt: null, sentBy: null };
+    if (!commit(data => ({ ...data, messages: [message, ...data.messages] }))) return { error: "The email could not be saved. Try again." };
+    return { id: message.id };
+  };
+
   const sendMessages = async (messageIds: readonly string[], actor: CampaignActor): Promise<{ sent: string[]; failed: Array<{ messageId: string; error: string }> }> => {
     if (!dataRef.current.emailConfigured) return { sent: [], failed: messageIds.map(messageId => ({ messageId, error: "Email sending is not set up." })) };
     const claim = new Set(dataRef.current.messages.filter(item => messageIds.includes(item.id) && (item.status === "queued" || item.status === "failed")).map(item => item.id).slice(0, 100));
@@ -819,6 +857,8 @@ export function useCampaignWorkspaceStore(campaignId: string, roleTitle: string,
     moveOnBoard,
     setStageFromWorkflow,
     queueOfferEmail,
+    messageStartFor,
+    prepareMessage,
     proposeShortlist,
     withdrawProposal,
     canDecide,

@@ -60,6 +60,50 @@ export function WorkflowDialog({ title, eyebrow, onClose, children, footer, wide
   </div>;
 }
 
+export type PickerItem = {
+  id: string;
+  name: string;
+  /** Short line under the name, e.g. the pipeline stage. */
+  meta: string;
+  /** Status on the right, e.g. "2 of 3 answered" or "Sent back". */
+  status?: { label: string; tone: "neutral" | "info" | "success" | "warning" | "danger" };
+};
+
+const pickerInitials = (name: string) => name.split(" ").map(part => part[0]).slice(0, 2).join("").toUpperCase();
+
+/** Candidate list for the References and Offers tabs. The chosen candidate is clearly highlighted. */
+export function CandidatePicker({ label, items, selectedId, onSelect }: {
+  label: string;
+  items: readonly PickerItem[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const onKeyDown = (event: React.KeyboardEvent<HTMLUListElement>) => {
+    if (!["ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft"].includes(event.key)) return;
+    event.preventDefault();
+    const index = items.findIndex(item => item.id === selectedId);
+    const step = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
+    const next = items[(index + step + items.length) % items.length];
+    if (!next) return;
+    onSelect(next.id);
+    document.getElementById(`rf-pick-${next.id}`)?.focus();
+  };
+  return <nav className="rf-picker" aria-label={label}>
+    <p className="rf-picker-label">{label}<span>{items.length}</span></p>
+    <ul role="listbox" aria-label={label} onKeyDown={onKeyDown}>{items.map(item => {
+      const selected = item.id === selectedId;
+      return <li key={item.id} role="presentation">
+        <button type="button" id={`rf-pick-${item.id}`} role="option" aria-selected={selected} tabIndex={selected ? 0 : -1} className={`rf-pick${selected ? " selected" : ""}`} onClick={() => onSelect(item.id)}>
+          <span className="rf-avatar">{pickerInitials(item.name)}</span>
+          <span className="rf-pick-text"><strong>{item.name}</strong><small>{item.meta}</small></span>
+          {item.status && <span className={`rf-pick-status ${item.status.tone}`}>{item.status.label}</span>}
+          {selected && <span className="rf-pick-check" aria-hidden="true"><Icon name="check" size={12}/></span>}
+        </button>
+      </li>;
+    })}</ul>
+  </nav>;
+}
+
 export function EmailPreviewDialog({ eyebrow, email, actionLabel, linkLabel, note, error, onSend, onClose }: {
   eyebrow: string;
   email: { to: string; subject: string; body: string };

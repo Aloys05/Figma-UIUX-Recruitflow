@@ -6,7 +6,15 @@ import type { CampaignActor } from "./permissions";
 import { Avatar, CriteriaChips, FitBadge, GuardedButton, NotAvailableButton, Pill, ProposeDialog, type ApproverOption } from "./workspaceUi";
 import { screenApplication, timeAgo, type CampaignWorkspaceStore, type ProposalItemDecision, type ProposalStatus, type ShortlistProposal, type WorkspaceApplication, type WorkspaceRequirement } from "./workspaceStore";
 
-const proposalTone = (status: ProposalStatus) => status === "Pending approval" ? "warning" : status === "Approved" ? "success" : status === "Returned" ? "info" : status === "Partially approved" ? "purple" : "neutral";
+const proposalTone = (status: ProposalStatus) => status === "Pending approval" ? "warning" : status === "Approved" ? "success" : status === "Returned" ? "danger" : status === "Partially approved" ? "purple" : "neutral";
+/** Plain words for each status, as the approver's decision reads to the recruiter. */
+const PROPOSAL_LABEL: Record<ProposalStatus, string> = {
+  "Pending approval": "Waiting for approval",
+  Approved: "Approved",
+  "Partially approved": "Partly sent back",
+  Returned: "Sent back",
+  Withdrawn: "Withdrawn",
+};
 
 export default function ShortlistsTab({ store, requirements, actor, approvers, offerStatusFor, onOpenOverview, blockedReason = null }: {
   store: CampaignWorkspaceStore;
@@ -82,16 +90,34 @@ export default function ShortlistsTab({ store, requirements, actor, approvers, o
       {overlapGroup("Requirements only", "They tick your boxes but the evidence behind the role is thinner.", "info", requirementsOnly)}
       {overlapGroup("AI only", "Strong on evidence, but something you asked for is missing or unverified. These are the ones worth a second look.", "warning", aiOnly)}
     </div>}
-    <div className="campaign-propose-row"><p>Pick from either list. They become one proposed shortlist, which still goes to a line manager for a decision.</p><GuardedButton role={actor.role} action="propose" extraBlock={blockedReason} variant="primary" disabled={selectedIds.length === 0} onClick={() => setProposeOpen(true)}>{`Propose ${selectedIds.length} selected`}</GuardedButton></div>
+    <div className={`campaign-propose-row${selectedIds.length ? " has-selection" : ""}${blockedReason ? " blocked" : ""}`}>
+      <p>{blockedReason
+        ? <><Icon name="lock" size={14}/> {blockedReason}</>
+        : selectedIds.length
+          ? <><strong>{selectedIds.length} selected.</strong> They go to {approvers[0]?.name ?? "the campaign's approver"} as one shortlist.</>
+          : "Pick from either list. They become one shortlist, which goes to the campaign's approver for a decision."}</p>
+      {selectedIds.length > 0 && <Button variant="ghost" onClick={() => setSelectedIds([])}>Clear</Button>}
+      <GuardedButton role={actor.role} action="propose" extraBlock={blockedReason} variant="primary" disabled={selectedIds.length === 0} onClick={() => setProposeOpen(true)}>Propose shortlist</GuardedButton>
+    </div>
 
-    <div className="campaign-proposals-header"><h3>Proposals</h3><select aria-label="Proposal status" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">All statuses</option>{["Pending approval", "Approved", "Returned", "Partially approved", "Withdrawn"].map(status => <option key={status}>{status}</option>)}</select></div>
-    {shownProposals.length ? <ul className="cw-proposals">{shownProposals.map(proposal => <li key={proposal.id} className="cw-proposal">
-      <header><div><h4>{proposal.name}</h4><p>Version {proposal.version}, submitted by {proposal.submittedBy} {timeAgo(proposal.submittedAt)}, approver {proposal.approverName}</p></div><Pill tone={proposalTone(proposal.status)}>{proposal.status}</Pill></header>
+    <div className="campaign-proposals-header"><h3>Proposals</h3><select aria-label="Proposal status" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">All statuses</option>{(["Pending approval", "Approved", "Partially approved", "Returned", "Withdrawn"] as const).map(status => <option key={status} value={status}>{PROPOSAL_LABEL[status]}</option>)}</select></div>
+    {shownProposals.length ? <ul className="cw-proposals">{shownProposals.map(proposal => {
+      const sentBack = proposal.applicationIds.filter(id => proposal.decisions[id]?.decision === "Returned").length;
+      const approvedCount = proposal.applicationIds.filter(id => proposal.decisions[id]?.decision === "Approved").length;
+      return <li key={proposal.id} className={`cw-proposal status-${proposal.status.toLowerCase().replace(/\s+/g, "-")}`}>
+      <header><div><h4>{proposal.name}</h4><p>Version {proposal.version}, proposed by {proposal.submittedBy} {timeAgo(proposal.submittedAt)}, sent to {proposal.approverName}</p></div><Pill tone={proposalTone(proposal.status)}>{PROPOSAL_LABEL[proposal.status]}</Pill></header>
+      {proposal.status === "Pending approval" && <p className="cw-proposal-summary waiting"><Icon name="clock" size={14}/>Waiting for {proposal.approverName} to decide on {proposal.applicationIds.length} candidate{proposal.applicationIds.length === 1 ? "" : "s"}.</p>}
+      {(proposal.status === "Partially approved" || proposal.status === "Returned") && <p className="cw-proposal-summary sent-back"><Icon name="close" size={14}/>{approvedCount} approved, {sentBack} sent back by {proposal.decidedBy ?? proposal.approverName}. Each reason is shown below.</p>}
       <ul className="cw-list">{proposal.applicationIds.map(id => {
         const application = applications.find(item => item.id === id);
         if (!application) return null;
         const decision = proposal.decisions[id];
-        return <li key={id}><span className="cw-person"><Avatar name={application.name}/><span><strong>{application.name}</strong><small>{application.headline}</small></span></span><Pill tone={!decision ? "warning" : decision.decision === "Approved" ? "success" : "danger"}>{!decision ? "Awaiting decision" : decision.decision}</Pill></li>;
+        const waiting = !decision && proposal.status === "Pending approval";
+        return <li key={id} className={decision?.decision === "Returned" ? "cw-sent-back-row" : undefined}>
+          <span className="cw-person"><Avatar name={application.name}/><span><strong>{application.name}</strong><small>{application.headline}</small></span></span>
+          {decision ? <Pill tone={decision.decision === "Approved" ? "success" : "danger"}>{decision.decision === "Approved" ? "Approved" : "Sent back"}</Pill> : waiting ? <Pill tone="warning">Waiting</Pill> : <Pill tone="neutral">No decision</Pill>}
+          {decision?.decision === "Returned" && <p className="cw-sent-back-reason"><span>Reason from {proposal.decidedBy ?? proposal.approverName}</span>{decision.comment || "No reason given."}</p>}
+        </li>;
       })}</ul>
       {proposal.note && <p className="cw-note-box">{proposal.note}</p>}
       {proposal.withdrawalReason && <p className="cw-muted">Withdrawn: {proposal.withdrawalReason}</p>}
@@ -99,10 +125,11 @@ export default function ShortlistsTab({ store, requirements, actor, approvers, o
         {proposal.status === "Pending approval" ? <GuardedButton role={actor.role} action="propose" onClick={() => setWithdrawTarget(proposal)}>Withdraw proposal</GuardedButton> : <span/>}
         <span className="cw-proposal-end">
           {proposal.status === "Pending approval" && <Button onClick={() => setApprovalId(proposal.id)}>Open approval</Button>}
-          {proposal.decidedBy && <small>Decided by {proposal.decidedBy} on {new Date(proposal.decidedAt ?? "").toLocaleString()}</small>}
+          {proposal.decidedBy && <small>Decided by {proposal.decidedBy} on {new Date(proposal.decidedAt ?? "").toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</small>}
         </span>
       </footer>
-    </li>)}</ul> : <div className="campaign-proposals-empty">No information found</div>}
+    </li>;
+    })}</ul> : <div className="campaign-proposals-empty"><strong>No shortlists yet</strong><p>Select candidates above and choose Propose shortlist. It goes to the campaign's approver.</p></div>}
 
     {proposeOpen && <ProposeDialog applications={applications.filter(item => selectedIds.includes(item.id))} requirements={requirements} approvers={approvers} onCancel={() => setProposeOpen(false)} onConfirm={input => { store.proposeShortlist({ ...input, applicationIds: selectedIds }, actor); setSelectedIds([]); setProposeOpen(false); }}/>}
     {withdrawTarget && <WithdrawProposalDialog proposal={withdrawTarget} onCancel={() => setWithdrawTarget(null)} onConfirm={reason => { store.withdrawProposal(withdrawTarget.id, reason, actor); setWithdrawTarget(null); }}/>}
@@ -159,7 +186,7 @@ function ApprovalsScreen({ store, requirements, actor, initialProposalId, onOpen
       return <li key={id} className="cw-approval-card">
         <header>
           <span className="cw-person"><Avatar name={application.name} size="md"/><span><button type="button" className="cw-name-link" onClick={() => onOpenProfile(application.id)}>{application.name}</button><small>{application.headline}{application.location ? `, ${application.location}` : ""}{application.experienceYears ? `, ${application.experienceYears} yrs` : ""}</small></span></span>
-          <span className="cw-chips"><FitBadge value={application.fitScore}/>{notMet ? <Pill tone="danger">Requirement not met</Pill> : unverified ? <Pill tone="warning">Needs verification</Pill> : null}{current && <Pill tone={current.decision === "Approved" ? "success" : "info"}>{current.decision}</Pill>}</span>
+          <span className="cw-chips"><FitBadge value={application.fitScore}/>{notMet ? <Pill tone="danger">Requirement not met</Pill> : unverified ? <Pill tone="warning">Needs verification</Pill> : null}{current && <Pill tone={current.decision === "Approved" ? "success" : "danger"}>{current.decision === "Approved" ? "Approved" : "Sent back"}</Pill>}</span>
         </header>
         <CriteriaChips criteria={screening.criteria}/>
         <p>{summary}</p>
@@ -168,18 +195,18 @@ function ApprovalsScreen({ store, requirements, actor, initialProposalId, onOpen
           <span className="cw-row-actions"><NotAvailableButton>View CV</NotAvailableButton><button type="button" className="cw-mini-btn" onClick={() => onOpenProfile(application.id)}>Full profile</button></span>
           {!decided && <span className="cw-row-actions">
             <GuardedButton role={actor.role} action="approveShortlist" extraBlock={blocked} variant={current?.decision === "Approved" ? "primary" : "secondary"} onClick={() => decide(id, "Approved")}>Approve</GuardedButton>
-            <GuardedButton role={actor.role} action="approveShortlist" extraBlock={blocked} variant={current?.decision === "Returned" ? "danger" : "secondary"} onClick={() => decide(id, "Returned")}>Return</GuardedButton>
+            <GuardedButton role={actor.role} action="approveShortlist" extraBlock={blocked} variant={current?.decision === "Returned" ? "danger" : "secondary"} onClick={() => decide(id, "Returned")}>Send back</GuardedButton>
           </span>}
         </footer>
-        {current?.decision === "Returned" && <label className="rf-field"><span>Return comment (required)</span><textarea rows={3} value={current.comment} disabled={decided || Boolean(blocked)} placeholder="Explain why this candidate is being returned…" onChange={event => { const comment = event.target.value; setDecisions(previous => ({ ...previous, [id]: { decision: "Returned", comment } })); }}/></label>}
+        {current?.decision === "Returned" && <label className="rf-field"><span>Reason for sending back (required)</span><textarea rows={3} value={current.comment} disabled={decided || Boolean(blocked)} placeholder="Explain why this candidate is being sent back…" onChange={event => { const comment = event.target.value; setDecisions(previous => ({ ...previous, [id]: { decision: "Returned", comment } })); }}/></label>}
       </li>;
     })}</ul>
     {!decided && !blocked && <div className="cw-decision-bar">
-      <p>Approving records your name, the date and any comments against each candidate. Returned candidates go back to the recruiter with their comment.</p>
+      <p>Approving records your name, the date and any comments against each candidate. Candidates you send back go to the recruiter with your reason.</p>
       <span className="cw-row-actions">
-        <Button variant="secondary" onClick={() => setDecisions(Object.fromEntries(proposal.applicationIds.map(id => [id, { decision: "Returned", comment: decisions[id]?.comment ?? "" }])))}>Return all</Button>
+        <Button variant="secondary" onClick={() => setDecisions(Object.fromEntries(proposal.applicationIds.map(id => [id, { decision: "Returned", comment: decisions[id]?.comment ?? "" }])))}>Send all back</Button>
         <Button disabled={!canSubmit} onClick={() => {
-          if (proposal.applicationIds.some(id => decisions[id].decision === "Returned" && !decisions[id].comment.trim())) { setProblem("Add a return comment for every returned candidate."); return; }
+          if (proposal.applicationIds.some(id => decisions[id].decision === "Returned" && !decisions[id].comment.trim())) { setProblem("Add a reason for every candidate you send back."); return; }
           if (store.decideProposal(proposal.id, decisions, actor)) onDone();
         }}>Submit decision</Button>
       </span>
@@ -187,7 +214,7 @@ function ApprovalsScreen({ store, requirements, actor, initialProposalId, onOpen
     </div>}
     {decided && <div className="cw-decision-box">
       <span className="cw-section-label">Decision</span>
-      <p>{proposal.status === "Withdrawn" ? `Withdrawn on ${new Date(proposal.withdrawnAt ?? "").toLocaleDateString("en-GB", { day: "numeric", month: "short" })}.` : `${proposal.status} by ${proposal.decidedBy ?? "Unknown"} on ${proposal.decidedAt ? new Date(proposal.decidedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "an unknown date"}, ${proposal.decidedAt ? new Date(proposal.decidedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""}.`}</p>
+      <p>{proposal.status === "Withdrawn" ? `Withdrawn on ${new Date(proposal.withdrawnAt ?? "").toLocaleDateString("en-GB", { day: "numeric", month: "short" })}.` : `${PROPOSAL_LABEL[proposal.status]} by ${proposal.decidedBy ?? "Unknown"} on ${proposal.decidedAt ? new Date(proposal.decidedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "an unknown date"}, ${proposal.decidedAt ? new Date(proposal.decidedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""}.`}</p>
       <p className="cw-muted">Changing an approved shortlist creates a new version. This one stays on the record.</p>
     </div>}
   </div>;

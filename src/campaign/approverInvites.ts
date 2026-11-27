@@ -141,7 +141,7 @@ export function emailBelongsToRecruiterOrCandidate(email: string): boolean {
   const team = readJson<{ members?: Array<{ email?: string }> }>("recruitflow.demoTeam", {}, value => typeof value === "object" && value !== null);
   if (team.members?.some(member => member.email?.toLowerCase() === wanted)) return true;
   // Anyone who has applied to a campaign has a candidate account.
-  const workspace = readJson<Record<string, { applications?: Array<{ email?: string }> }>>("recruitflow.campaignWorkspace", {}, value => typeof value === "object" && value !== null);
+  const workspace = readJson<Record<string, { applications?: Array<{ email?: string }> }>>("recruitflow.campaignWorkspace.v2", {}, value => typeof value === "object" && value !== null);
   return Object.values(workspace).some(data => data?.applications?.some(application => application.email?.toLowerCase() === wanted));
 }
 

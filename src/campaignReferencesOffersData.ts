@@ -58,7 +58,8 @@ export type Referee = {
   checkedAt?: string;
 };
 
-export type OfferStatus = "draft" | "pending" | "approved" | "sent" | "withdrawn";
+/** "sent-back": the approver returned it with a reason. The reason shows until the offer is submitted again. */
+export type OfferStatus = "draft" | "pending" | "approved" | "sent-back" | "sent" | "withdrawn";
 export type WorkArrangement = "On site" | "Hybrid" | "Remote";
 
 export type OfferDetails = {
@@ -84,6 +85,9 @@ export type CandidateOffer = OfferDetails & {
   submittedAt?: string;
   approvedBy?: string;
   approvedAt?: string;
+  sentBackBy?: string;
+  sentBackAt?: string;
+  sentBackReason?: string;
   sentAt?: string;
   withdrawnAt?: string;
   withdrawnBy?: string;
@@ -94,8 +98,9 @@ export type ReferencesOffersData = { referees: Referee[]; offers: CandidateOffer
 
 export const offerStatusLabels: Record<OfferStatus, string> = {
   draft: "Draft",
-  pending: "Pending approval",
+  pending: "Waiting for approval",
   approved: "Approved",
+  "sent-back": "Sent back",
   sent: "Sent",
   withdrawn: "Withdrawn",
 };
@@ -103,8 +108,9 @@ export const offerStatusTones: Record<OfferStatus, "neutral" | "warning" | "info
   draft: "neutral",
   pending: "warning",
   approved: "info",
+  "sent-back": "danger",
   sent: "success",
-  withdrawn: "danger",
+  withdrawn: "neutral",
 };
 export const refereeStatusTones: Record<RefereeDisplayStatus, "neutral" | "info" | "warning" | "success" | "danger"> = {
   "Not sent": "neutral",
@@ -209,7 +215,8 @@ export function buildOfferEmail(offer: CandidateOffer, candidate: { name: string
 /* Storage                                                              */
 /* ------------------------------------------------------------------ */
 
-const storageKey = "recruitflow.demoReferencesOffers";
+// v2: re-seeds once so the D5 demo shows a sent-back offer.
+const storageKey = "recruitflow.demoReferencesOffers.v2";
 const ago = (days: number, hours = 0) => new Date(Date.now() - days * DAY - hours * 60 * 60 * 1000).toISOString();
 const inDays = (days: number) => new Date(Date.now() + days * DAY).toISOString().slice(0, 10);
 const token = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
@@ -259,6 +266,26 @@ function seedData(campaignId: string, roleTitle: string): ReferencesOffersData {
       draftedAt: ago(1, 4),
       updatedAt: ago(1, 2),
       submittedAt: ago(1, 2),
+    }, {
+      id: createId("offer"),
+      campaignId,
+      candidateId: "mateo-silva",
+      status: "sent-back",
+      previousStage: "reference-check",
+      monthlySalary: 48000,
+      startDate: inDays(35),
+      probation: "3 months",
+      noticePeriod: "1 month",
+      reportsTo: "Head of Design",
+      workArrangement: "Hybrid",
+      conditions: "Subject to two satisfactory references.",
+      draftedBy: "Dave Sench",
+      draftedAt: ago(3, 2),
+      updatedAt: ago(2, 6),
+      submittedAt: ago(3),
+      sentBackBy: "Johnny Test",
+      sentBackAt: ago(2, 6),
+      sentBackReason: "Two of Mateo's referees haven't answered yet. Please resubmit once references are back, and bring the salary in line with the band (NAD 45,000 or below).",
     }],
   };
 }

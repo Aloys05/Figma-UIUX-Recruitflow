@@ -18,7 +18,7 @@ import {
   type CampaignViewer,
   type Referee,
 } from "./campaignReferencesOffersData";
-import { EmailPreviewDialog, PermissionButton, WorkflowDialog } from "./campaignWorkflowUi";
+import { CandidatePicker, EmailPreviewDialog, PermissionButton, WorkflowDialog, type PickerItem } from "./campaignWorkflowUi";
 import { Badge, Button, Icon } from "./ui";
 
 type RefereeDraft = { name: string; relationship: string; company: string; email: string };
@@ -38,10 +38,11 @@ export default function CampaignReferencesTab({ campaignId, roleTitle, candidate
   focusCandidateId?: string | null;
 }) {
   const store = useReferencesOffers(campaignId, roleTitle);
+  const [selectedId, setSelectedId] = useState<string | null>(focusCandidateId ?? null);
   useEffect(() => {
     if (!focusCandidateId) return;
+    setSelectedId(focusCandidateId);
     const element = document.getElementById(`rf-group-${focusCandidateId}`);
-    element?.scrollIntoView({ behavior: "smooth", block: "start" });
     element?.classList.add("rf-focus");
     const timer = window.setTimeout(() => element?.classList.remove("rf-focus"), 2400);
     return () => window.clearTimeout(timer);
@@ -65,6 +66,18 @@ export default function CampaignReferencesTab({ campaignId, roleTitle, candidate
   const answersReferee = answersFor ? findReferee(answersFor) : undefined;
   const allReferees = store.data.referees.filter(referee => eligible.some(candidate => candidate.id === referee.candidateId));
   const outstanding = allReferees.filter(referee => ["Sent", "Overdue"].includes(getRefereeDisplayStatus(referee))).length;
+  const selectedCandidate = eligible.find(candidate => candidate.id === selectedId) ?? eligible[0];
+  const pickerItems: PickerItem[] = eligible.map(candidate => {
+    const referees = refereesFor(candidate.id);
+    const statuses = referees.map(getRefereeDisplayStatus);
+    const answered = statuses.filter(status => status === "Responded" || status === "Declined").length;
+    const status: PickerItem["status"] = !referees.length ? { label: "No referees", tone: "neutral" }
+      : statuses.includes("Overdue") ? { label: "Overdue", tone: "warning" }
+      : answered === referees.length ? { label: "All answered", tone: "success" }
+      : { label: `${answered} of ${referees.length} answered`, tone: "info" };
+    return { id: candidate.id, name: candidate.name, meta: stageTitle(candidate.stage), status };
+  });
+  const choose = (candidateId: string) => { setSelectedId(candidateId); setAddingFor(null); setNotice(null); };
   const overdue = allReferees.filter(referee => getRefereeDisplayStatus(referee) === "Overdue").length;
 
   const openAddForm = (candidateId: string) => {
@@ -195,7 +208,9 @@ export default function CampaignReferencesTab({ campaignId, roleTitle, candidate
       <span><Icon name="users" size={22}/></span>
       <h3>No candidates ready for references</h3>
       <p>References start after the shortlist is approved. Candidates at Shortlist approved, Reference check or Offer will appear here.</p>
-    </section> : <div className="rf-groups">{eligible.map(candidate => {
+    </section> : <div className="rf-picker-layout">
+      <CandidatePicker label="Shortlisted candidates" items={pickerItems} selectedId={selectedCandidate?.id ?? null} onSelect={choose}/>
+      <div className="rf-groups">{(selectedCandidate ? [selectedCandidate] : []).map(candidate => {
       const referees = refereesFor(candidate.id);
       const atLimit = referees.length >= MAX_REFEREES;
       const groupNotice = notice?.candidateId === candidate.id ? notice : null;
@@ -247,7 +262,8 @@ export default function CampaignReferencesTab({ campaignId, roleTitle, candidate
           </li>;
         })}</ul> : addingFor !== candidate.id && <div className="rf-group-empty">No referees yet. Add up to {MAX_REFEREES} referees for {candidate.name}.</div>}
       </article>;
-    })}</div>}
+    })}</div>
+    </div>}
 
     {emailFor && emailReferee && <EmailPreviewDialog
       eyebrow={emailFor.reminder ? "Chase referee" : "Send reference request"}

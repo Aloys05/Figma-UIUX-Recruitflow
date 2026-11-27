@@ -39,3 +39,11 @@
 - `/approver/offers/of-csl?preview=undecided|approved|sent-back` — open one designed state (also the "Preview" menu). Preview decisions are not saved
 - Demo rule: decisions made in Live mode are kept in browser storage, so a finished shortlist or offer moves to Decided. "Reset demo" on the Approvals page clears them
 - The signed-in approver's name comes from the approver invitation sign-in (D3); otherwise the demo approver Maria Shilongo is shown
+
+## Phase 5 (D5) — Workflow tabs after the Longlist
+Open a campaign as the main recruiter (e.g. `/recruiter/campaigns/1`) and use the tabs. "Preview as" at the top switches between main recruiter, additional recruiter and approver.
+- `?tab=shortlists` — D5.1 Propose a shortlist. Select candidates (the bar turns blue and counts them), name the shortlist, Propose shortlist. No approver picker: it goes to the campaign's approver. Each shortlist shows Waiting for approval, Approved, or Partly sent back / Sent back with each candidate's reason. Blocked state: the propose bar and button lock when the campaign has no approver (D3.4)
+- `?tab=references` — D5.2 References. Candidate picker on the left (chosen candidate highlighted in blue with a tick), Add referee, Preview & send (request sent), View answers (reference received and its content), empty state when nobody is past the shortlist
+- `?tab=offers` — D5.3 Offers. Candidate picker, offer form, Submit for approval. States: Draft, Waiting for approval, Approved, Sent, Sent back. Demo: Sara Nguyen is waiting for approval; Mateo Silva's offer was sent back, and the approver's reason shows until it is submitted again. Preview as the approver to Approve or Send back (reason required)
+- `?tab=messages` — D5.4 Messages. Write a message: template list, To (candidate), wording that starts from that candidate's real email, Customise wording, Preview, Send, Confirm send. Outbox: everything queued, sent or failed. As the additional recruiter you can prepare and Save to outbox but not send
+- Demo rule: workspace and reference/offer data moved to new storage keys (`.v2`), so the demo re-seeds once with these states

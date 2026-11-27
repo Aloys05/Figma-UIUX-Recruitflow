@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { WorkflowDialog } from "../campaignWorkflowUi";
 import { Button, Icon } from "../ui";
 import { canPerform, type CampaignActor } from "./permissions";
+import MessageComposer from "./MessageComposer";
 import { GuardedButton, Pill } from "./workspaceUi";
 import { MESSAGE_TEMPLATES, MESSAGE_TEMPLATE_LABEL, type CampaignWorkspaceStore, type CandidateMessage, type MessageStatus } from "./workspaceStore";
 
@@ -14,6 +15,7 @@ const when = (iso: string | null) => iso ? new Date(iso).toLocaleString("en-GB",
 
 export default function MessagesTab({ store, actor }: { store: CampaignWorkspaceStore; actor: CampaignActor }) {
   const { messages, autoSend, emailConfigured } = store.data;
+  const [view, setView] = useState<"compose" | "outbox">("compose");
   const [filter, setFilter] = useState<"all" | MessageStatus>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openId, setOpenId] = useState<string | null>(null);
@@ -43,6 +45,11 @@ export default function MessagesTab({ store, actor }: { store: CampaignWorkspace
 
   return <section className="cw-messages">
     {!emailConfigured && <p className="rf-banner warning" role="alert"><Icon name="mail" size={16}/>Email sending is not set up. No email can go until it is.</p>}
+    <div className="cw-messages-views" role="tablist" aria-label="Messages">
+      <button type="button" role="tab" aria-selected={view === "compose"} className={view === "compose" ? "on" : ""} onClick={() => setView("compose")}><Icon name="file" size={14}/>Write a message</button>
+      <button type="button" role="tab" aria-selected={view === "outbox"} className={view === "outbox" ? "on" : ""} onClick={() => setView("outbox")}><Icon name="mail" size={14}/>Outbox<span>{messages.length}</span></button>
+    </div>
+    {view === "compose" ? <MessageComposer store={store} actor={actor} onOpenOutbox={() => { setFilter("all"); setView("outbox"); }}/> : <>
     <div className="cw-messages-toolbar">
       <div className="cw-filter-chips" role="group" aria-label="Filter emails by status">{FILTERS.map(item => <button type="button" key={item.id} className={filter === item.id ? "on" : ""} aria-pressed={filter === item.id} onClick={() => { setFilter(item.id); setSelected(new Set()); }}>{item.label}<span>{item.id === "all" ? messages.length : messages.filter(message => message.status === item.id).length}</span></button>)}</div>
       <span className="cw-row-actions">
@@ -70,6 +77,8 @@ export default function MessagesTab({ store, actor }: { store: CampaignWorkspace
         <td data-label="Sent">{message.sentAt ? <span className="cw-stack"><span>{when(message.sentAt)}</span><small>{message.sentBy ?? "Sent automatically"}</small></span> : "—"}</td>
       </tr>)}</tbody>
     </table></div>}
+
+    </>}
 
     {open && <WorkflowDialog eyebrow={MESSAGE_TEMPLATE_LABEL[open.template]} title={editing ? "Edit email" : "Email preview"} wide onClose={() => setOpenId(null)} footer={<>
       <Button variant="secondary" onClick={() => setOpenId(null)}>Close</Button>
